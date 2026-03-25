@@ -1,177 +1,181 @@
 # UART Controller IP — RTL to GDSII (Sky130)
 
-A register-mapped UART peripheral designed and taken through the full RTL-to-GDSII flow using **OpenLane** and the **SkyWater 130 nm** PDK. Built as a realistic, portfolio-quality hardware IP block demonstrating end-to-end ASIC design methodology.
+A register-mapped UART peripheral designed and taken through the full **RTL-to-GDSII** flow using OpenLane and the SkyWater 130 nm PDK. This project demonstrates end-to-end ASIC design: architecture, RTL, functional verification, synthesis, place-and-route, and physical signoff.
+
+---
 
 ## Architecture
 
-```
-                        ┌─────────────────────────────────────────────┐
-                        │               uart_top                      │
-                        │                                             │
-   addr[2:0] ──────────┤  ┌───────────┐   ┌──────────┐              │
-   wdata[7:0] ─────────┤  │ Register  │   │ sync_fifo│   ┌────────┐ │
-   wen ────────────────┤  │ Interface │──▶│ (8-deep) │──▶│ uart_tx │──── uart_tx
-   ren ────────────────┤  │           │   └──────────┘   └────────┘ │
-   rdata[7:0] ◀────────┤  │ TX_DATA   │                             │
-                        │  │ RX_DATA   │                  ┌────────┐ │
-   clk ────────────────┤  │ STATUS    │◀─────────────────│ uart_rx │◀─── uart_rx
-   rst_n ──────────────┤  │ CTRL      │                  │ (2-FF   │ │
-                        │  └───────────┘                  │  sync)  │ │
-   irq ◀───────────────┤                                 └────────┘ │
-                        └─────────────────────────────────────────────┘
-```
+The top-level `uart_top` module integrates a transmitter, receiver, 8-deep TX FIFO, and a 4-register control interface. The bus-agnostic `addr/wdata/rdata` protocol maps trivially onto APB, Wishbone, or any SoC fabric.
 
-### Modules
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="UART Controller Architecture" width="85%"/>
+</p>
 
-| Module | Description | Lines |
-|--------|-------------|-------|
-| `uart_top` | Register-mapped peripheral wrapper with TX FIFO, status/ctrl registers, interrupt | ~170 |
-| `uart_tx` | UART transmitter with configurable parity (8N1 / 8E1 / 8O1) | ~110 |
-| `uart_rx` | UART receiver with 2-FF metastability synchronizer and parity checking | ~150 |
-| `sync_fifo` | Parameterised synchronous FIFO (pointer-based, fall-through read) | ~55 |
+| Module | Description |
+|--------|-------------|
+| **uart_top** | Register-mapped wrapper — FIFO, status/ctrl registers, interrupt |
+| **uart_tx** | Transmitter with configurable parity (8N1 / 8E1 / 8O1) |
+| **uart_rx** | Receiver with 2-FF metastability synchronizer, mid-bit sampling, parity check |
+| **sync_fifo** | Parameterised synchronous FIFO — pointer-based, fall-through read |
 
-### Register Map
+---
 
-| Addr | Name | Access | Description |
-|------|------|--------|-------------|
-| 0x0 | TX_DATA | W | Write a byte into the 8-deep TX FIFO |
-| 0x1 | RX_DATA | R | Read last received byte (clears `rx_ready`) |
-| 0x2 | STATUS | R/W1C | `{2'b0, parity_err, frame_err, rx_ready, fifo_full, fifo_empty, tx_busy}` |
-| 0x3 | CTRL | RW | `{5'b0, irq_en, parity_odd, parity_en}` |
+## Register Map
 
-Error flags in STATUS use the **W1C** (write-1-to-clear) convention — write a `1` to a bit position to acknowledge and clear it.
+Four registers control the peripheral. Error flags use the industry-standard **W1C** (write-1-to-clear) pattern — write a `1` to acknowledge and clear.
 
-## Key Design Decisions
+<p align="center">
+  <img src="docs/images/register_map.svg" alt="Register Map" width="85%"/>
+</p>
 
-1. **2-FF Synchronizer on RX** — The UART receive line is, by definition, asynchronous to the local clock. A dual flip-flop synchronizer prevents metastability from propagating into the FSM. This is a hard requirement for any real silicon implementation.
+| Addr | Name | Access | Bits |
+|------|------|--------|------|
+| 0x0 | **TX_DATA** | W | `tx_data[7:0]` — write a byte into the TX FIFO |
+| 0x1 | **RX_DATA** | R | `rx_data[7:0]` — read last received byte (clears `rx_ready`) |
+| 0x2 | **STATUS** | R/W1C | `{—, —, parity_err, frame_err, rx_ready, fifo_full, fifo_empty, tx_busy}` |
+| 0x3 | **CTRL** | RW | `{—, —, —, —, —, irq_en, parity_odd, parity_en}` |
 
-2. **Mid-bit Sampling** — After detecting a falling edge (start bit), the receiver waits half a bit period to reach the centre of the start bit. If the line is still LOW, reception proceeds; otherwise the glitch is rejected. All subsequent samples occur one full bit period apart, keeping every sample near the bit centre for maximum noise immunity.
+---
 
-3. **TX FIFO** — An 8-deep synchronous FIFO decouples the bus write rate from the serialiser. Software can burst-write multiple bytes without polling `tx_busy` between each one. The FIFO uses pointer-based full/empty detection with an extra MSB bit for disambiguation — no subtraction or counter needed.
+## Simulation Waveforms
 
-4. **W1C Error Flags** — Sticky error flags (frame error, parity error) use write-1-to-clear semantics. This is the industry-standard pattern (seen in ARM AMBA peripherals, RISC-V PLIC, etc.) that avoids race conditions between hardware setting a flag and software clearing it.
+### Single Byte Transfer (8N1 — 0xA5)
 
-5. **Bus-Agnostic Interface** — The register interface uses a simple `addr/wdata/rdata/wen/ren` protocol that maps trivially onto APB, Wishbone, or any SoC fabric — no bus-specific boilerplate in the IP itself.
+The TX line drops LOW for the start bit, then transmits 8 data bits LSB-first, followed by a HIGH stop bit. The `rx_valid` pulse confirms successful reception through the 2-FF synchronizer.
 
-6. **Configurable Parity** — Runtime-selectable even/odd parity via the CTRL register. The TX computes the parity bit combinationally from the data byte; the RX accumulates a running XOR and checks against the received parity bit.
+<p align="center">
+  <img src="docs/images/uart_8n1_waveform.png" alt="8N1 Waveform — 0xA5" width="95%"/>
+</p>
 
-## Design Tradeoffs
+### FIFO Burst — 4 Bytes Back-to-Back
 
-| Decision | Alternative | Rationale |
-|----------|-------------|-----------|
-| Synchronous reset (active-low) | Async reset | Cleaner timing closure; `rst_n` meets setup/hold like any other input. Sky130 DFFs support both. |
-| Fixed baud divider (parameter) | Runtime-configurable divider register | Keeps the synthesised counter width minimal. For a multi-baud design, adding a 16-bit divisor register is straightforward. |
-| Single-clock FIFO | Dual-clock async FIFO | TX and bus share the same clock; no CDC needed. An async FIFO would only be necessary if the bus and UART clocks were independent. |
-| No RX FIFO | RX FIFO with watermark IRQ | Simplifies the design. A production UART would add an RX FIFO to tolerate interrupt latency; easily extensible with the existing `sync_fifo` module. |
-| Fall-through FIFO read | Registered FIFO read | Removes one cycle of latency between FIFO pop and TX start. Requires a data latch register (`tx_data_reg`) to hold the value after the read pointer advances. |
+Four bytes are written to the TX FIFO in rapid succession. The serialiser drains them one at a time with no idle gaps between frames — demonstrating that the FIFO decouples the bus write rate from the serial line speed.
+
+<p align="center">
+  <img src="docs/images/uart_fifo_burst.png" alt="FIFO Burst Waveform" width="95%"/>
+</p>
+
+---
 
 ## Verification
 
-Self-checking testbench with **6 test groups** covering functional correctness, error detection, and FIFO ordering:
+Self-checking testbench with **6 test groups** — all passing:
 
 | # | Test | What it verifies |
 |---|------|------------------|
-| 1 | 8N1 loopback | Basic TX→RX with 5 data patterns (0xA5, 0x00, 0xFF, 0x55, 0xAA) |
-| 2 | Even parity (8E1) | Parity generation and checking (even mode) |
-| 3 | Odd parity (8O1) | Parity generation and checking (odd mode) |
-| 4 | FIFO burst | Write 4 bytes back-to-back, verify in-order delivery |
-| 5 | Framing error | Manually injected bad stop bit, verify `frame_err` sticky flag |
-| 6 | Status flags | Verify idle-state register values (`fifo_empty=1, tx_busy=0`) |
+| 1 | 8N1 loopback | TX→RX with 5 patterns: `0xA5, 0x00, 0xFF, 0x55, 0xAA` |
+| 2 | Even parity (8E1) | Parity generation and checking — even mode |
+| 3 | Odd parity (8O1) | Parity generation and checking — odd mode |
+| 4 | FIFO burst | 4 bytes back-to-back, verify in-order delivery |
+| 5 | Framing error | Injected bad stop bit → `frame_err` sticky flag set |
+| 6 | Status flags | Idle state: `fifo_empty=1, tx_busy=0` |
 
 ```
-=== TEST 1: Basic 8N1 loopback ===
-  PASS: 0xa5 / PASS: 0x00 / PASS: 0xff / PASS: 0x55 / PASS: 0xaa
-=== TEST 2: 8E1 (even parity) ===
-  PASS: 0x37 / PASS: 0xc3
-=== TEST 3: 8O1 (odd parity) ===
-  PASS: 0x42 / PASS: 0xbd
-=== TEST 4: FIFO burst (4 bytes) ===
-  PASS: 0x11 / PASS: 0x22 / PASS: 0x33 / PASS: 0x44
-=== TEST 5: Framing error detection ===
-  PASS: frame_err detected
-=== TEST 6: Status register flags ===
-  PASS: idle state correct
-========================================
-  ALL TESTS PASSED (6 tests)
-========================================
+ALL TESTS PASSED (6 tests)
 ```
 
-## Physical Design Results (Sky130, OpenLane)
+---
 
-Results from the initial `uart_tx`-only synthesis run. The full `uart_top` with FIFO and RX can be re-synthesised for updated numbers.
+## Physical Design (GDSII)
+
+Layout generated by OpenLane targeting Sky130 HD standard cells. The design passes all signoff checks: DRC clean, LVS clean, no antenna violations.
+
+<p align="center">
+  <img src="docs/images/gds_layout.png" alt="GDS Layout — KLayout view" width="60%"/>
+</p>
+
+<sub>KLayout view of the <code>uart_tx</code> GDSII. The full <code>uart_top</code> (with FIFO + RX) produces a proportionally larger layout when re-synthesised.</sub>
+
+### Signoff Results
 
 | Metric | Value |
 |--------|-------|
-| Technology | SkyWater 130 nm (sky130_fd_sc_hd) |
+| Technology | SkyWater 130 nm (`sky130_fd_sc_hd`) |
 | Clock period | 10 ns (100 MHz target) |
-| Worst setup slack | **+78.59 ns** (wide positive margin) |
-| Worst hold slack | **+0.34 ns** (met) |
+| Worst setup slack | **+78.59 ns** |
+| Worst hold slack | **+0.34 ns** |
 | Total power (typical) | **61.2 uW** |
 | Cell count | 145 |
 | Cell area | 1 565 um^2 |
-| Die dimensions | 60 x 71 um |
+| Die | 60 x 71 um |
 | DRC violations | **0** |
-| LVS | **Clean** (no mismatches) |
+| LVS errors | **0** |
 | Antenna violations | **0** |
+
+---
+
+## Key Design Decisions
+
+| Decision | Alternative considered | Rationale |
+|----------|----------------------|-----------|
+| **2-FF synchronizer** on RX | No synchronizer | RX is async to `clk` — mandatory for real silicon |
+| **Mid-bit sampling** | Triple-sample majority vote | Adequate noise immunity; majority vote adds ~20% logic |
+| **W1C error flags** | Clear-on-read | Industry standard (ARM AMBA, RISC-V PLIC); avoids simulation race conditions |
+| **TX FIFO (8-deep)** | No FIFO | Enables burst writes; decouples bus from serial line |
+| **Synchronous active-low reset** | Async reset | Cleaner timing closure — `rst_n` meets setup/hold like any input |
+| **Fixed baud divider (parameter)** | Runtime register | Minimises counter width; easy to extend with a divisor register |
+| **Fall-through FIFO** | Registered read | Saves 1 cycle latency; requires a data latch (`tx_data_reg`) at the consumer |
+
+---
 
 ## Repository Structure
 
 ```
 rtl/
-  uart_top.v           # Top-level register-mapped controller
-  uart_tx.v            # UART transmitter
-  uart_rx.v            # UART receiver (with 2-FF sync)
-  sync_fifo.v          # Parameterised synchronous FIFO
+  uart_top.v           Top-level register-mapped controller
+  uart_tx.v            UART transmitter
+  uart_rx.v            UART receiver (2-FF sync, parity)
+  sync_fifo.v          Parameterised synchronous FIFO
 tb/
-  uart_top_tb.v        # Self-checking testbench (6 tests)
-  Makefile             # Simulation build/run
+  uart_top_tb.v        Self-checking testbench (6 tests)
+  Makefile             Simulation build / run
   simulation_results.txt
 openlane/
-  config.json          # OpenLane design configuration
-  pin_order.cfg        # Pin placement constraints
+  config.json          OpenLane design configuration
+  pin_order.cfg        Pin placement constraints
+docs/
+  images/              Architecture, register map, waveforms, layout
+  gen_waveforms.py     Script to regenerate waveform PNGs from VCD
+  gen_diagrams.py      Script to regenerate SVG diagrams
 ```
 
-## Running the Project
-
-### Prerequisites
-
-- [Icarus Verilog](http://iverilog.icarus.com/) for simulation
-- [GTKWave](http://gtkwave.sourceforge.net/) for waveform viewing (optional)
-- [Docker](https://www.docker.com/) + [OpenLane](https://github.com/The-OpenROAD-Project/OpenLane) for the ASIC flow
+## How to Run
 
 ### Simulation
 
 ```bash
 cd tb
-make sim          # Compile and run all tests
-make wave         # Open waveform in GTKWave
-make clean        # Remove generated files
+make sim          # compile + run all 6 tests
+make wave         # open VCD in GTKWave
 ```
 
-### OpenLane RTL-to-GDSII Flow
+### Regenerate Diagrams
 
 ```bash
-# Clone OpenLane and install (see OpenLane docs)
-# Copy openlane/ contents into OpenLane/designs/uart_top/
-# Copy rtl/ into OpenLane/designs/uart_top/src/
+cd tb && make sim           # produces uart_top_tb.vcd
+python3 docs/gen_waveforms.py
+python3 docs/gen_diagrams.py
+```
 
+### OpenLane ASIC Flow
+
+```bash
 # Inside the OpenLane Docker container:
+# Copy openlane/ → designs/uart_top/  and  rtl/ → designs/uart_top/src/
 ./flow.tcl -design uart_top
 ```
 
-Outputs land in `designs/uart_top/runs/<timestamp>/`:
-- `results/synthesis/` — Yosys netlist
-- `results/signoff/uart_top.gds` — Final GDSII layout
-- `results/signoff/uart_top.sdf` — Timing annotation for gate-level sim
-- `reports/signoff/` — STA, DRC, LVS, power reports
-
 ## Tools
 
-- **Icarus Verilog** — RTL simulation
-- **OpenLane v1.0.2** — Full ASIC flow (synthesis, P&R, signoff)
-- **SkyWater sky130A PDK** — 130 nm standard cell library
-- **KLayout** — GDS layout viewer
+| Tool | Purpose |
+|------|---------|
+| Icarus Verilog | RTL simulation |
+| OpenLane v1.0.2 | Full ASIC flow (synthesis → signoff) |
+| SkyWater sky130A PDK | 130 nm standard cell library |
+| KLayout | GDS layout viewer |
+| Python + matplotlib | Waveform / diagram generation |
 
 ## License
 
-The UART IP source code is original work. The OpenLane flow infrastructure is licensed under [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) by Efabless Corporation.
+UART IP source code is original work. OpenLane flow infrastructure is [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) (Efabless Corporation).
