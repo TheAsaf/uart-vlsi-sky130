@@ -1,0 +1,21 @@
+{
+    "DESIGN_NAME": "uart_top",
+    "VERILOG_FILES": [
+        "dir::../rtl/uart_top.v",
+        "dir::../rtl/uart_tx.v",
+        "dir::../rtl/uart_rx.v",
+        "dir::../rtl/sync_fifo.v"
+    ],
+    "CLOCK_PORT": "clk",
+    "CLOCK_PERIOD": 10.0,
+    "FP_CORE_UTIL": 50,
+    "PL_TARGET_DENSITY": 0.60,
+    "FP_SIZING": "relative",
+    "FP_PDN_AUTO_ADJUST": true,
+    "ROUTING_CORES": 4,
+    "RUN_CVC": true,
+    "pdk::sky130A": {
+        "STD_CELL_LIBRARY": "sky130_fd_sc_hd",
+        "CLOCK_PERIOD": 10.0
+    }
+}

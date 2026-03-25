@@ -1,0 +1,19 @@
+# Simulation artifacts
+tb/uart_sim
+tb/*.vcd
+
+# OS files
+.DS_Store
+
+# Editor files
+**/*.swp
+*~
+**/.vscode/
+
+# OpenLane run outputs (large, regenerable)
+openlane/runs/
+
+# Python
+__pycache__/
+*.pyc
+venv/

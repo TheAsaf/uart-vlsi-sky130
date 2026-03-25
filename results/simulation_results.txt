@@ -1,9 +1,0 @@
-VCD info: dumpfile uart_tb.vcd opened for output.
-PASS: sent 0xa5  received 0xa5
-PASS: sent 0xff  received 0xff
-PASS: sent 0x00  received 0x00
-PASS: sent 0x55  received 0x55
-PASS: sent 0x37  received 0x37
---------------------
-ALL TESTS PASSED
-uart_tb.v:96: $finish called at 5216950000 (1ps)

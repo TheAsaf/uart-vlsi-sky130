@@ -1,0 +1,34 @@
+VCD info: dumpfile uart_top_tb.vcd opened for output.
+
+=== TEST 1: Basic 8N1 loopback ===
+  PASS: 0xa5
+  PASS: 0x00
+  PASS: 0xff
+  PASS: 0x55
+  PASS: 0xaa
+
+=== TEST 2: 8E1 (even parity) ===
+  PASS: 0x37
+  PASS: 0xc3
+
+=== TEST 3: 8O1 (odd parity) ===
+  PASS: 0x42
+  PASS: 0xbd
+
+=== TEST 4: FIFO burst (4 bytes) ===
+  PASS: 0x11
+  PASS: 0x22
+  PASS: 0x33
+  PASS: 0x44
+
+=== TEST 5: Framing error detection ===
+  PASS: frame_err detected
+
+=== TEST 6: Status register flags ===
+  PASS: idle state correct (fifo_empty=1, tx_busy=0)
+
+========================================
+  ALL TESTS PASSED (6 tests)
+========================================
+
+./uart_top_tb.v:376: $finish called at 25415000 (1ps)
