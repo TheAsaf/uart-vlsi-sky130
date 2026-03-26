@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Generate UART waveform diagrams from simulation VCD data.
+"""Generate precise UART waveform diagrams from simulation VCD data.
 
 Produces two images:
-  1. uart_8n1_waveform.png  — A single 8N1 byte transfer (0xA5) showing
-     start bit, 8 data bits, stop bit, and RX valid pulse.
-  2. uart_fifo_burst.png    — FIFO burst of 4 bytes showing back-to-back
-     transmission without idle gaps.
+  1. uart_8n1_waveform.png  — A single 8N1 byte (0xA5) with exact bit
+     boundaries, start/data/stop annotations, and rx_valid confirmation.
+  2. uart_fifo_burst.png    — FIFO burst of 4 bytes (0x11–0x44) showing
+     near-zero idle between frames.
+
+The waveforms are plotted directly from VCD transitions (no interpolation)
+so every edge is pixel-accurate.
 """
 
-import struct
-import re
-import sys
 import os
 import matplotlib
 matplotlib.use("Agg")
@@ -20,22 +20,22 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# Minimal VCD parser — extracts named signals as (time, value) pairs.
+# Precise VCD parser — full hierarchical signal names
 # ---------------------------------------------------------------------------
 
-def parse_vcd(path, signals_of_interest):
-    """Return {signal_name: [(time, value), ...]} from a VCD file."""
-    var_map = {}   # vcd_id -> signal_name
-    data = {s: [] for s in signals_of_interest}
+def parse_vcd(path):
+    """Return {full_hierarchical_name: [(time_ps, value_str), ...]}."""
+    var_map = {}       # vcd_id → full name
+    data = {}          # full name → [(time, val)]
+    scope_stack = []
+    in_defs = True
+    current_time = 0
 
     with open(path) as f:
-        in_defs = True
-        scope_stack = []
         for line in f:
             line = line.strip()
             if not line:
                 continue
-
             if in_defs:
                 if line.startswith("$scope"):
                     parts = line.split()
@@ -46,282 +46,342 @@ def parse_vcd(path, signals_of_interest):
                         scope_stack.pop()
                 elif line.startswith("$var"):
                     parts = line.split()
-                    # $var wire 1 ! clk $end
                     if len(parts) >= 5:
                         vcd_id = parts[3]
                         name = parts[4]
                         full = ".".join(scope_stack + [name])
-                        for s in signals_of_interest:
-                            if name == s or full.endswith(s):
-                                var_map[vcd_id] = s
+                        var_map[vcd_id] = full
+                        data[full] = []
                 elif line.startswith("$enddefinitions"):
                     in_defs = False
                 continue
-
-            # Value changes
             if line.startswith("#"):
                 current_time = int(line[1:])
             elif len(line) >= 2 and line[0] in "01xXzZ":
-                val = line[0]
                 vid = line[1:]
                 if vid in var_map:
-                    data[var_map[vid]].append((current_time, val))
+                    data[var_map[vid]].append((current_time, line[0]))
             elif line.startswith("b"):
                 parts = line.split()
                 if len(parts) == 2 and parts[1] in var_map:
                     data[var_map[parts[1]]].append((current_time, parts[0][1:]))
-
     return data
 
 
-def signal_to_digital(events, t_start, t_end, resolution=1000):
-    """Convert event list to arrays suitable for step plotting."""
-    times = np.linspace(t_start, t_end, resolution)
-    values = np.full(resolution, np.nan)
-
-    if not events:
-        return times, values
-
-    # Build a sorted list of transitions
-    evts = [(t, v) for t, v in events if t_start <= t <= t_end]
-    # Also include the last event before t_start
-    pre = [(t, v) for t, v in events if t < t_start]
-    if pre:
-        evts.insert(0, pre[-1])
-    evts.sort()
-
-    for i, t in enumerate(times):
-        # Find last event at or before t
-        val = None
-        for et, ev in evts:
-            if et <= t:
-                val = ev
-            else:
-                break
-        if val is not None:
-            if val in ("0", "1"):
-                values[i] = int(val)
-            else:
-                values[i] = 0.5  # unknown / X
-
-    return times, values
+def get_signal(data, suffix):
+    """Find a signal by suffix match (e.g. 'u_tx.tx')."""
+    for name in data:
+        if name.endswith(suffix):
+            return data[name]
+    return []
 
 
 # ---------------------------------------------------------------------------
-# Plotting helpers
+# Build step-plot arrays directly from transitions (no sampling)
+# ---------------------------------------------------------------------------
+
+def transitions_to_step(events, t_start, t_end):
+    """Convert [(time, val)] to (times, values) for plt.step().
+
+    Returns arrays where every VCD edge maps to an exact point.
+    Values: '1'→1.0, '0'→0.0, 'x'/'X'→0.5.
+    """
+    def to_num(v):
+        if v == '1': return 1.0
+        if v == '0': return 0.0
+        return 0.5  # x / z
+
+    # Find last value before the window
+    init_val = 0.5
+    for t, v in events:
+        if t <= t_start:
+            init_val = to_num(v)
+        else:
+            break
+
+    ts = [t_start]
+    vs = [init_val]
+
+    for t, v in events:
+        if t < t_start:
+            continue
+        if t > t_end:
+            break
+        ts.append(t)
+        vs.append(to_num(v))
+
+    ts.append(t_end)
+    vs.append(vs[-1])
+
+    return np.array(ts, dtype=float), np.array(vs, dtype=float)
+
+
+# ---------------------------------------------------------------------------
+# Styling
 # ---------------------------------------------------------------------------
 
 COLORS = {
-    "tx":       "#2563EB",  # blue
-    "rx":       "#DC2626",  # red (unused here, rx=tx in loopback)
-    "start":    "#16A34A",  # green
-    "data":     "#2563EB",
-    "valid":    "#9333EA",  # purple
-    "done":     "#EA580C",  # orange
-    "clk":      "#6B7280",  # grey
+    "tx":       "#2563EB",
+    "rx":       "#7C3AED",
+    "busy":     "#EA580C",
+    "valid":    "#059669",
+    "done":     "#DC2626",
 }
 
-def add_bit_annotations(ax, y_base, t_start, bit_period, bits, label_prefix=""):
-    """Add bit value labels above each bit cell."""
-    for i, bit in enumerate(bits):
-        t_center = t_start + (i + 0.5) * bit_period
-        ax.text(t_center, y_base, str(bit),
-                ha="center", va="bottom", fontsize=7,
-                fontfamily="monospace", color="#374151", fontweight="bold")
+
+def style_axis(ax):
+    ax.set_facecolor("#FAFBFC")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(left=False, labelleft=True, bottom=True,
+                   colors="#6B7280", labelsize=7)
+    ax.grid(axis="y", color="#F3F4F6", linewidth=0.5)
 
 
-def style_axis(ax, title=""):
-    ax.set_facecolor("#FAFAFA")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#D1D5DB")
-    ax.spines["bottom"].set_color("#D1D5DB")
-    ax.tick_params(colors="#6B7280", labelsize=7)
-    if title:
-        ax.set_title(title, fontsize=9, fontweight="bold", color="#111827", loc="left", pad=8)
+def plot_signal(ax, times_ps, values, color, label, t_scale=1e6):
+    """Plot a single digital waveform with fill."""
+    t = times_ps / t_scale  # ps → µs
+    ax.fill_between(t, 0, values, step="pre", alpha=0.12, color=color)
+    ax.step(t, values, where="pre", linewidth=1.4, color=color)
+    ax.set_ylim(-0.18, 1.55)
+    ax.set_yticks([0, 1])
+    ax.set_yticklabels(["0", "1"], fontsize=7, color="#6B7280")
+    ax.set_ylabel(label, fontsize=9, fontweight="bold", color="#374151",
+                  rotation=0, labelpad=62, va="center")
 
 
 # ---------------------------------------------------------------------------
-# Figure 1: Single 8N1 byte (0xA5) waveform
+# Figure 1: Single 8N1 byte (0xA5)
 # ---------------------------------------------------------------------------
 
-def plot_single_byte(vcd_path, out_path):
-    CLK_PERIOD = 10_000  # 10 ns in ps
-    CLKS_PER_BIT = 16
-    BIT_PERIOD = CLK_PERIOD * CLKS_PER_BIT  # 160,000 ps
+def plot_single_byte(data, out_path):
+    BIT = 160_000  # ps per UART bit (16 clocks × 10 ns)
 
-    sigs = parse_vcd(vcd_path, ["clk", "uart_tx", "uart_rx", "tx_busy", "rx_valid",
-                                 "tx_start", "irq", "rx_ready"])
-
-    # Find the first tx going low (start bit) — that's the first byte
-    tx_events = sigs.get("uart_tx", [])
-    first_start = None
-    for t, v in tx_events:
-        if v == "0" and t > 200_000:  # skip reset period
-            first_start = t
+    # Exact start-bit time from VCD: first 1→0 on TX after idle
+    tx_events = get_signal(data, "u_tx.tx")
+    start_t = None
+    for i, (t, v) in enumerate(tx_events):
+        if v == '0' and i > 0 and tx_events[i-1][1] == '1' and t > 100_000:
+            start_t = t
             break
-
-    if first_start is None:
-        print("Could not find first TX start bit in VCD")
+    if start_t is None:
+        print("ERROR: could not find first TX start bit")
         return
 
-    # Window: a bit before start to after stop bit
-    margin = BIT_PERIOD * 1.5
-    t_start = first_start - margin
-    t_end = first_start + BIT_PERIOD * 11 + margin  # start + 8 data + stop + margin
-    res = 3000
+    # 0xA5 = 10100101, LSB-first: D0=1 D1=0 D2=1 D3=0 D4=0 D5=1 D6=0 D7=1
+    data_bits = [1, 0, 1, 0, 0, 1, 0, 1]
 
-    fig, axes = plt.subplots(4, 1, figsize=(12, 5.5), sharex=True,
-                              gridspec_kw={"hspace": 0.05, "height_ratios": [1, 1, 0.6, 0.6]})
+    # Window: 1 bit before start → 1.5 bits after stop
+    t0 = start_t - int(1.2 * BIT)
+    t1 = start_t + int(11.5 * BIT)
+
+    fig, axes = plt.subplots(4, 1, figsize=(13, 5.5), sharex=True,
+                              gridspec_kw={"hspace": 0.08,
+                                           "height_ratios": [1.3, 1.0, 0.7, 0.7]})
     fig.patch.set_facecolor("white")
 
-    labels = [
-        ("uart_tx", "TX Line", COLORS["tx"]),
-        ("uart_rx", "RX (loopback)", "#DC2626"),
-        ("tx_busy", "tx_busy", COLORS["done"]),
-        ("rx_valid", "rx_valid", COLORS["valid"]),
+    signals = [
+        ("u_tx.tx",       "TX Line",       COLORS["tx"]),
+        ("loopback",      "RX (loopback)", COLORS["rx"]),
+        ("u_tx.tx_busy",  "tx_busy",       COLORS["busy"]),
+        ("u_rx.rx_valid", "rx_valid",      COLORS["valid"]),
     ]
 
-    for ax, (sig_name, label, color) in zip(axes, labels):
-        times, values = signal_to_digital(sigs.get(sig_name, []), t_start, t_end, res)
-        times_us = times / 1e6  # ps to µs
-        ax.fill_between(times_us, 0, values, alpha=0.15, color=color, step="pre")
-        ax.step(times_us, values, where="pre", linewidth=1.2, color=color)
-        ax.set_ylim(-0.15, 1.4)
-        ax.set_ylabel(label, fontsize=8, color="#374151", fontweight="bold", rotation=0,
-                       labelpad=60, va="center")
-        ax.set_yticks([0, 1])
-        ax.set_yticklabels(["0", "1"], fontsize=7)
+    for ax, (sig_suffix, label, color) in zip(axes, signals):
+        events = get_signal(data, sig_suffix)
+        ts, vs = transitions_to_step(events, t0, t1)
+        plot_signal(ax, ts, vs, color, label)
         style_axis(ax)
 
-    # Annotate bit fields on the TX line
-    ax0 = axes[0]
-    data_byte = 0xA5  # 10100101
-    bits = [(data_byte >> i) & 1 for i in range(8)]  # LSB first
+    ax_tx = axes[0]
 
+    # --- Bit-boundary vertical lines ---
+    for i in range(11):
+        t_line = (start_t + i * BIT) / 1e6
+        for ax in axes:
+            ax.axvline(t_line, color="#E5E7EB", linewidth=0.6, linestyle="--", zorder=0)
+    # End of stop bit
+    t_stop_end = (start_t + 10 * BIT) / 1e6
+    for ax in axes:
+        ax.axvline(t_stop_end, color="#E5E7EB", linewidth=0.6, linestyle="--", zorder=0)
+
+    # --- Shaded regions ---
     # Start bit
-    t_s = first_start / 1e6
-    bp = BIT_PERIOD / 1e6
-    ax0.annotate("START", xy=(t_s + bp/2, -0.08), fontsize=6, ha="center",
-                 color="#16A34A", fontweight="bold")
+    ax_tx.axvspan(start_t / 1e6, (start_t + BIT) / 1e6,
+                  alpha=0.08, color="#16A34A", zorder=0)
+    # Data bits
+    ax_tx.axvspan((start_t + BIT) / 1e6, (start_t + 9 * BIT) / 1e6,
+                  alpha=0.06, color="#2563EB", zorder=0)
+    # Stop bit
+    ax_tx.axvspan((start_t + 9 * BIT) / 1e6, (start_t + 10 * BIT) / 1e6,
+                  alpha=0.08, color="#16A34A", zorder=0)
+
+    # --- Bit labels ---
+    # Start
+    t_mid = (start_t + BIT / 2) / 1e6
+    ax_tx.text(t_mid, 1.38, "START", ha="center", va="bottom", fontsize=7,
+               fontweight="bold", color="#16A34A")
 
     # Data bits
-    for i, b in enumerate(bits):
-        t_center = (first_start + (1 + i) * BIT_PERIOD + BIT_PERIOD/2) / 1e6
-        ax0.annotate(f"D{i}={b}", xy=(t_center, 1.25), fontsize=5.5, ha="center",
-                     color="#1E40AF", fontweight="bold")
+    for i, b in enumerate(data_bits):
+        t_mid = (start_t + (1 + i) * BIT + BIT / 2) / 1e6
+        ax_tx.text(t_mid, 1.38, f"D{i}={b}", ha="center", va="bottom",
+                   fontsize=6.5, fontweight="bold", color="#1E40AF")
 
-    # Stop bit
-    t_stop = (first_start + 9 * BIT_PERIOD + BIT_PERIOD/2) / 1e6
-    ax0.annotate("STOP", xy=(t_stop, -0.08), fontsize=6, ha="center",
-                 color="#16A34A", fontweight="bold")
+    # Stop
+    t_mid = (start_t + 9 * BIT + BIT / 2) / 1e6
+    ax_tx.text(t_mid, 1.38, "STOP", ha="center", va="bottom", fontsize=7,
+               fontweight="bold", color="#16A34A")
 
-    # Byte value annotation
-    ax0.annotate(f"0xA5", xy=(t_s + 5*bp, 1.35), fontsize=9, ha="center",
-                 color="#1E3A5F", fontweight="bold",
-                 bbox=dict(boxstyle="round,pad=0.3", facecolor="#DBEAFE", edgecolor="#93C5FD"))
+    # Byte value badge
+    t_center = (start_t + 5 * BIT) / 1e6
+    ax_tx.annotate("0xA5", xy=(t_center, 1.52), fontsize=10, ha="center",
+                   fontweight="bold", color="#1E3A5F",
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor="#DBEAFE",
+                             edgecolor="#93C5FD", linewidth=1.2))
 
-    # Add vertical dashed lines for bit boundaries
-    for i in range(11):
-        t_line = (first_start + i * BIT_PERIOD) / 1e6
-        for ax in axes:
-            ax.axvline(t_line, color="#E5E7EB", linewidth=0.5, linestyle="--", zorder=0)
+    # --- Idle labels ---
+    t_idle_l = (t0 + start_t) / 2 / 1e6
+    ax_tx.text(t_idle_l, 0.5, "IDLE", ha="center", va="center",
+               fontsize=8, color="#9CA3AF", fontstyle="italic")
+    t_idle_r = (start_t + 10.7 * BIT) / 1e6
+    ax_tx.text(t_idle_r, 0.5, "IDLE", ha="center", va="center",
+               fontsize=8, color="#9CA3AF", fontstyle="italic")
 
-    axes[-1].set_xlabel("Time (µs)", fontsize=8, color="#6B7280")
-
+    axes[-1].set_xlabel("Time (µs)", fontsize=9, color="#6B7280")
     fig.suptitle("UART 8N1 Transmission — Single Byte (0xA5)",
-                 fontsize=11, fontweight="bold", color="#111827", y=0.97)
+                 fontsize=13, fontweight="bold", color="#111827", y=0.97)
 
-    plt.savefig(out_path, dpi=180, bbox_inches="tight", facecolor="white", edgecolor="none")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight",
+                facecolor="white", edgecolor="none")
     plt.close()
     print(f"  Saved: {out_path}")
 
 
 # ---------------------------------------------------------------------------
-# Figure 2: FIFO burst — 4 bytes back-to-back
+# Figure 2: FIFO burst (4 bytes back-to-back)
 # ---------------------------------------------------------------------------
 
-def plot_fifo_burst(vcd_path, out_path):
-    CLK_PERIOD = 10_000
-    CLKS_PER_BIT = 16
-    BIT_PERIOD = CLK_PERIOD * CLKS_PER_BIT
-    FRAME_BITS = 10  # start + 8 data + stop
+def plot_fifo_burst(data, out_path):
+    BIT = 160_000  # ps per UART bit
 
-    sigs = parse_vcd(vcd_path, ["uart_tx", "rx_valid", "tx_busy"])
+    # Identify burst frames from tx_busy: the 4 consecutive frames where
+    # FIFO stays non-empty (test 4). FIFO empty signal shows it stays
+    # non-empty from ~15.885 us to ~20.735 us.
+    busy_events = get_signal(data, "u_tx.tx_busy")
 
-    tx_events = sigs.get("uart_tx", [])
+    # Find rising edges of tx_busy (frame starts)
+    frame_starts = []
+    for i, (t, v) in enumerate(busy_events):
+        if v == '1' and i > 0 and busy_events[i-1][1] == '0':
+            frame_starts.append(t)
 
-    # Find start bits (falling edges after the design settles)
-    # We need to find the FIFO burst which is test 4: bytes 0x11, 0x22, 0x33, 0x44
-    # These come after tests 1-3. Let's find the 4 consecutive start bits that correspond.
-    falling_edges = []
-    prev_v = "1"
-    for t, v in tx_events:
-        if prev_v == "1" and v == "0" and t > 200_000:
-            falling_edges.append(t)
-        prev_v = v
+    # Find falling edges (frame ends)
+    frame_ends = []
+    for i, (t, v) in enumerate(busy_events):
+        if v == '0' and i > 0 and busy_events[i-1][1] == '1':
+            frame_ends.append(t)
 
-    # The burst bytes (test 4) are bytes 10-13 (0-indexed: after 5+2+2=9 bytes from tests 1-3)
-    if len(falling_edges) < 13:
-        print(f"Not enough falling edges found ({len(falling_edges)}), skipping burst plot")
+    # The FIFO burst (test 4) has uniquely tight inter-frame gaps: the FIFO
+    # feeds the TX with only ~2 clock cycles (~20,000 ps) between frames,
+    # whereas testbench-driven sends have ~60,000+ ps gaps.  Find 4
+    # consecutive frames whose 3 inter-frame gaps are all < 30,000 ps.
+    burst_start_idx = None
+    for i in range(len(frame_starts) - 3):
+        gaps = []
+        for j in range(3):
+            gap = frame_starts[i + j + 1] - frame_ends[i + j]
+            gaps.append(gap)
+        if all(g < 30_000 for g in gaps):  # < 3 clocks = FIFO-driven
+            burst_start_idx = i
+            break
+
+    if burst_start_idx is None:
+        print("ERROR: could not identify FIFO burst frames")
         return
 
-    burst_start = falling_edges[9]  # 10th byte = first burst byte
-    burst_end = falling_edges[9] + FRAME_BITS * BIT_PERIOD * 4 + BIT_PERIOD * 3
+    burst_frames = []
+    for j in range(4):
+        idx = burst_start_idx + j
+        burst_frames.append((frame_starts[idx], frame_ends[idx]))
 
-    margin = BIT_PERIOD * 2
-    t_start = burst_start - margin
-    t_end = burst_end + margin
-    res = 4000
+    byte_values = [0x11, 0x22, 0x33, 0x44]
 
-    fig, axes = plt.subplots(3, 1, figsize=(14, 4), sharex=True,
-                              gridspec_kw={"hspace": 0.05, "height_ratios": [1.2, 0.6, 0.6]})
+    # Window
+    t0 = burst_frames[0][0] - int(2 * BIT)
+    t1 = burst_frames[3][1] + int(2 * BIT)
+
+    fig, axes = plt.subplots(3, 1, figsize=(15, 4.5), sharex=True,
+                              gridspec_kw={"hspace": 0.08,
+                                           "height_ratios": [1.4, 0.7, 0.7]})
     fig.patch.set_facecolor("white")
 
-    labels = [
-        ("uart_tx", "TX Line", COLORS["tx"]),
-        ("tx_busy", "tx_busy", COLORS["done"]),
-        ("rx_valid", "rx_valid", COLORS["valid"]),
+    sigs = [
+        ("u_tx.tx",       "TX Line",  COLORS["tx"]),
+        ("u_tx.tx_busy",  "tx_busy",  COLORS["busy"]),
+        ("u_rx.rx_valid", "rx_valid", COLORS["valid"]),
     ]
 
-    for ax, (sig_name, label, color) in zip(axes, labels):
-        times, values = signal_to_digital(sigs.get(sig_name, []), t_start, t_end, res)
-        times_us = times / 1e6
-        ax.fill_between(times_us, 0, values, alpha=0.15, color=color, step="pre")
-        ax.step(times_us, values, where="pre", linewidth=1.2, color=color)
-        ax.set_ylim(-0.15, 1.5)
-        ax.set_ylabel(label, fontsize=8, color="#374151", fontweight="bold", rotation=0,
-                       labelpad=55, va="center")
-        ax.set_yticks([0, 1])
-        ax.set_yticklabels(["0", "1"], fontsize=7)
+    for ax, (sig_suffix, label, color) in zip(axes, sigs):
+        events = get_signal(data, sig_suffix)
+        ts, vs = transitions_to_step(events, t0, t1)
+        plot_signal(ax, ts, vs, color, label)
         style_axis(ax)
 
-    # Annotate each byte in the burst
-    burst_bytes = [0x11, 0x22, 0x33, 0x44]
-    burst_colors = ["#DBEAFE", "#FEF3C7", "#D1FAE5", "#FCE7F3"]
-    burst_edge_colors = ["#93C5FD", "#FCD34D", "#6EE7B7", "#F9A8D4"]
+    ax_tx = axes[0]
 
-    for idx in range(4):
-        if 9 + idx < len(falling_edges):
-            fe = falling_edges[9 + idx]
-            t_center = (fe + FRAME_BITS * BIT_PERIOD / 2) / 1e6
-            axes[0].annotate(f"0x{burst_bytes[idx]:02X}", xy=(t_center, 1.3),
-                            fontsize=9, ha="center", fontweight="bold", color="#1E3A5F",
-                            bbox=dict(boxstyle="round,pad=0.3",
-                                     facecolor=burst_colors[idx],
-                                     edgecolor=burst_edge_colors[idx]))
+    # --- Per-frame shading and labels ---
+    frame_colors = ["#DBEAFE", "#FEF3C7", "#D1FAE5", "#FCE7F3"]
+    frame_edge   = ["#93C5FD", "#FCD34D", "#6EE7B7", "#F9A8D4"]
+    frame_text   = ["#1E40AF", "#92400E", "#065F46", "#9D174D"]
 
-            # Shade the frame region
-            t_frame_start = fe / 1e6
-            t_frame_end = (fe + FRAME_BITS * BIT_PERIOD) / 1e6
-            axes[0].axvspan(t_frame_start, t_frame_end, alpha=0.08,
-                           color=burst_edge_colors[idx], zorder=0)
+    for i, ((fs, fe), bval) in enumerate(zip(burst_frames, byte_values)):
+        # Shade the frame region on TX axis
+        ax_tx.axvspan(fs / 1e6, fe / 1e6, alpha=0.12,
+                      color=frame_edge[i], zorder=0)
 
-    axes[-1].set_xlabel("Time (µs)", fontsize=8, color="#6B7280")
+        # Byte value badge
+        t_mid = (fs + fe) / 2 / 1e6
+        ax_tx.annotate(f"0x{bval:02X}", xy=(t_mid, 1.38), fontsize=10,
+                       ha="center", fontweight="bold", color=frame_text[i],
+                       bbox=dict(boxstyle="round,pad=0.3",
+                                 facecolor=frame_colors[i],
+                                 edgecolor=frame_edge[i], linewidth=1.2))
+
+        # Start/stop bit boundary lines
+        for ax in axes:
+            ax.axvline(fs / 1e6, color="#D1D5DB", linewidth=0.5,
+                       linestyle=":", zorder=0)
+            ax.axvline(fe / 1e6, color="#D1D5DB", linewidth=0.5,
+                       linestyle=":", zorder=0)
+
+    # --- Annotate gaps between frames ---
+    for i in range(3):
+        gap_start = burst_frames[i][1]
+        gap_end   = burst_frames[i+1][0]
+        gap_clks  = (gap_end - gap_start) / 10_000  # 10ns per clock
+        t_mid = (gap_start + gap_end) / 2 / 1e6
+        axes[1].annotate(f"{int(gap_clks)}T", xy=(t_mid, 0.5),
+                         fontsize=6, ha="center", va="center",
+                         color="#6B7280", fontstyle="italic",
+                         bbox=dict(boxstyle="round,pad=0.15",
+                                   facecolor="white", edgecolor="#D1D5DB",
+                                   linewidth=0.5))
+
+    # --- Idle labels ---
+    t_idle_l = (t0 + burst_frames[0][0]) / 2 / 1e6
+    ax_tx.text(t_idle_l, 0.5, "IDLE", ha="center", va="center",
+               fontsize=8, color="#9CA3AF", fontstyle="italic")
+    t_idle_r = (burst_frames[3][1] + t1) / 2 / 1e6
+    ax_tx.text(t_idle_r, 0.5, "IDLE", ha="center", va="center",
+               fontsize=8, color="#9CA3AF", fontstyle="italic")
+
+    axes[-1].set_xlabel("Time (µs)", fontsize=9, color="#6B7280")
     fig.suptitle("UART FIFO Burst — 4 Bytes Back-to-Back (0x11, 0x22, 0x33, 0x44)",
-                 fontsize=11, fontweight="bold", color="#111827", y=0.97)
+                 fontsize=13, fontweight="bold", color="#111827", y=0.98)
 
-    plt.savefig(out_path, dpi=180, bbox_inches="tight", facecolor="white", edgecolor="none")
+    plt.savefig(out_path, dpi=200, bbox_inches="tight",
+                facecolor="white", edgecolor="none")
     plt.close()
     print(f"  Saved: {out_path}")
 
@@ -331,11 +391,14 @@ def plot_fifo_burst(vcd_path, out_path):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    vcd = os.path.join(os.path.dirname(__file__), "..", "tb", "uart_top_tb.vcd")
-    img_dir = os.path.join(os.path.dirname(__file__), "images")
+    vcd_path = os.path.join(os.path.dirname(__file__), "..", "tb", "uart_top_tb.vcd")
+    img_dir  = os.path.join(os.path.dirname(__file__), "images")
     os.makedirs(img_dir, exist_ok=True)
 
-    print("Generating waveform images from VCD...")
-    plot_single_byte(vcd, os.path.join(img_dir, "uart_8n1_waveform.png"))
-    plot_fifo_burst(vcd, os.path.join(img_dir, "uart_fifo_burst.png"))
+    print("Parsing VCD...")
+    data = parse_vcd(vcd_path)
+
+    print("Generating waveforms...")
+    plot_single_byte(data, os.path.join(img_dir, "uart_8n1_waveform.png"))
+    plot_fifo_burst(data,  os.path.join(img_dir, "uart_fifo_burst.png"))
     print("Done.")
