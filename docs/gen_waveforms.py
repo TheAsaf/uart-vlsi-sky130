@@ -161,8 +161,8 @@ def style_axis(ax):
 def plot_signal(ax, times_ps, values, color, label, lw=1.4, t_scale=1e6):
     """Plot a single digital waveform with fill."""
     t = times_ps / t_scale  # ps → µs
-    ax.fill_between(t, 0, values, step="pre", alpha=0.10, color=color)
-    ax.step(t, values, where="pre", linewidth=lw, color=color)
+    ax.fill_between(t, 0, values, step="post", alpha=0.10, color=color)
+    ax.step(t, values, where="post", linewidth=lw, color=color)
     ax.set_ylim(-0.18, 1.55)
     ax.set_yticks([0, 1])
     ax.set_yticklabels(["0", "1"], fontsize=7, color="#6B7280")

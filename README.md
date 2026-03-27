@@ -1,6 +1,29 @@
 # UART Controller IP — RTL to GDSII (Sky130)
 
-A register-mapped UART peripheral designed and taken through the full **RTL-to-GDSII** flow using OpenLane and the SkyWater 130 nm PDK. This project demonstrates end-to-end ASIC design: architecture, RTL, functional verification, synthesis, place-and-route, and physical signoff.
+## What is UART?
+
+**UART** (Universal Asynchronous Receiver-Transmitter) is one of the simplest and most widely used hardware communication protocols. It allows two devices to send data to each other over just two wires — one for sending (TX) and one for receiving (RX) — without needing a shared clock signal.
+
+**How it works:** When a device wants to send a byte (8 bits of data), it doesn't just dump all 8 bits at once. Instead, it sends them one bit at a time over a single wire, like spelling out a word letter-by-letter. Each transmission follows a strict format called a **frame**:
+
+1. **Start bit** — The line is normally held HIGH (idle). To begin, the sender pulls it LOW for one bit period. This tells the receiver: "a byte is coming."
+2. **Data bits** — The 8 bits of data are sent one at a time, least-significant bit first.
+3. **Stop bit** — The line goes back HIGH for one bit period, marking the end of the frame.
+
+Both devices must agree on the **baud rate** — the speed of transmission (how long each bit lasts). A common rate is 115,200 bits per second. Because there's no shared clock wire, the receiver uses the start bit's falling edge to synchronize and then samples each data bit at the midpoint of its expected time window.
+
+UART is everywhere: microcontrollers, GPS modules, Bluetooth chips, serial terminals, embedded systems, and debug interfaces all use it.
+
+## What We Built
+
+This project implements a **complete UART controller as a silicon-ready chip design**, taken from concept all the way to a physical layout that could be fabricated on a real chip. Specifically:
+
+- **A transmitter** that takes bytes from software and serializes them into the UART frame format described above.
+- **A receiver** that listens on the RX wire, detects start bits, samples data at the centre of each bit, reassembles bytes, and flags errors (bad stop bit, parity mismatch).
+- **A FIFO buffer** (First In, First Out — a small queue) that stores up to 8 bytes waiting to be transmitted, so software can write data in bursts without waiting for each byte to finish sending.
+- **A register interface** that lets software control the whole peripheral by reading and writing to 4 simple addresses — just like how a driver talks to any hardware device in a real chip.
+
+The design is written in **Verilog** (the standard language for describing digital hardware), fully verified with automated tests, and then taken through an industry-standard **ASIC flow** (using OpenLane + SkyWater 130 nm process) to produce an actual chip layout — complete with timing analysis, power estimates, and design-rule checks that confirm it could be manufactured.
 
 ---
 
