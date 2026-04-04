@@ -150,6 +150,16 @@ cd tb && make all   # runs both testbenches; prints PASS/FAIL per assertion
 **Tool flow:** Yosys → OpenROAD (floorplan → placement → CTS → routing) → OpenSTA → Magic DRC → Netgen LVS → GDS
 **PDK:** sky130A · sky130_fd_sc_hd · 130 nm
 
+<p align="center">
+  <img src="docs/images/gds_layout.png" width="700" alt="rv32_soc GDS floorplan — sky130A layer view" />
+</p>
+
+<p align="center">
+  <sub>GDS floorplan in KLayout layer colours. <b>Green stripes</b>: met4 VDD power straps. <b>Yellow</b>: met3 VSS straps. <b>Blue-grey</b>: met1/met2 signal routing. <b>Orange</b>: li1 local interconnect (standard cell bodies). <b>Red</b>: poly gate layer. Dense region (bottom-left) = 8,192-DFF SRAM array; sparser rows = PicoRV32 CPU logic.</sub>
+</p>
+
+<br>
+
 ### Logical structure
 
 <p align="center">

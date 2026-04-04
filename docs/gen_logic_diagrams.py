@@ -78,121 +78,185 @@ def _arrow(ax, x0, y0, x1, y1, label="", color=MUTED, lw=1.2, style="->"):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1.  SoC HIERARCHY DIAGRAM
+# 1.  SoC HIERARCHY DIAGRAM  (redesigned — larger canvas, bigger text)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def gen_soc_hierarchy():
-    fig, ax = plt.subplots(figsize=(14, 10), facecolor=BG)
+    # Coordinate space: 24 wide × 16 tall; figure 20×14 → plenty of px/unit
+    W, H = 24, 16
+    fig, ax = plt.subplots(figsize=(20, 14), facecolor=BG)
     ax.set_facecolor(BG)
-    ax.set_xlim(0, 14); ax.set_ylim(0, 10)
+    ax.set_xlim(0, W); ax.set_ylim(0, H)
     ax.axis("off")
 
-    # ── soc_top outer container ───────────────────────────────────────────────
-    outer = FancyBboxPatch((0.3, 0.3), 13.4, 9.4,
-                            boxstyle="round,pad=0.04",
-                            linewidth=2, edgecolor=COL["top"],
-                            facecolor=_rgba(COL["top"], 0.06), zorder=1)
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def box(cx, cy, w, h, color, title, sub1="", sub2="", zo=3):
+        r, g, b, _ = _rgba(color, 0.28)
+        rect = FancyBboxPatch((cx - w/2, cy - h/2), w, h,
+                               boxstyle="round,pad=0.04",
+                               linewidth=2.2, edgecolor=color,
+                               facecolor=(r, g, b, 0.32), zorder=zo)
+        ax.add_patch(rect)
+        lines = [(title, 13, "bold"), (sub1, 10.5, "normal"), (sub2, 10.5, "normal")]
+        ys = [0.2, -0.55, -1.1] if sub2 else ([0.15, -0.52] if sub1 else [0])
+        for (txt, fs, fw), dy in zip(lines, ys):
+            if txt:
+                ax.text(cx, cy + dy, txt, ha="center", va="center",
+                        fontsize=fs, fontweight=fw,
+                        color="white" if fw == "bold" else MUTED,
+                        zorder=zo+1,
+                        path_effects=[pe.withStroke(linewidth=1.8, foreground=BG)])
+
+    def conn(x0, y0, x1, y1, color, label="", lw=2.2, rad=0.0, bidir=False):
+        sty = "<|-|>" if bidir else "-|>"
+        ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
+                    arrowprops=dict(arrowstyle=sty, color=color, lw=lw,
+                                    mutation_scale=14,
+                                    connectionstyle=f"arc3,rad={rad}"),
+                    zorder=6)
+        if label:
+            mx, my = (x0+x1)/2, (y0+y1)/2
+            ax.text(mx, my, label, ha="center", va="center",
+                    fontsize=9.5, color=color, fontweight="bold",
+                    zorder=7,
+                    bbox=dict(facecolor=BG, edgecolor="none", alpha=0.85, pad=2))
+
+    # ── soc_top outer frame ───────────────────────────────────────────────────
+    outer = FancyBboxPatch((0.5, 0.5), W - 1.0, H - 2.5,
+                            boxstyle="round,pad=0.05",
+                            linewidth=2.5, edgecolor=COL["top"],
+                            facecolor=_rgba(COL["top"], 0.04), zorder=1)
     ax.add_patch(outer)
-    _text(ax, 7, 9.6, "soc_top", fontsize=12, fontweight="bold",
-          color=COL["top"], zorder=2)
-    _text(ax, 7, 9.25, "reset sync (2-FF)  ·  IRQ routing  ·  83 generic cells",
-          fontsize=8, color=MUTED, zorder=2)
+    ax.text(W/2, H - 0.8, "soc_top",
+            ha="center", fontsize=16, fontweight="bold",
+            color=COL["top"], zorder=2,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
+    ax.text(W/2, H - 1.35,
+            "reset synchroniser (2-FF)  ·  IRQ routing  ·  180 generic cells  ·  14 DFFs",
+            ha="center", fontsize=10.5, color=MUTED, zorder=2)
 
-    # ── picorv32 ──────────────────────────────────────────────────────────────
-    _box(ax, 2.4, 5.5, 3.8, 5.4, COL["cpu"],
-         "picorv32", "RV32I CPU · 14 100 cells\n1520 DFFs · ENABLE_IRQ")
+    # ── picorv32 (left column) ────────────────────────────────────────────────
+    box(3.2, 7.5, 5.2, 12.0, COL["cpu"],
+        "picorv32",
+        "RV32I CPU  ·  14,100 cells  ·  1,520 DFFs",
+        "ENABLE_IRQ · BARREL_SHIFTER · no MUL/DIV")
 
-    # ── soc_bus ───────────────────────────────────────────────────────────────
-    _box(ax, 7.0, 5.5, 2.5, 5.4, COL["bus"],
-         "soc_bus", "Addr decode · 1 250 cells\nSRAM 0x0… / UART 0x2…")
+    # ── soc_bus (centre column) ───────────────────────────────────────────────
+    box(9.2, 7.5, 3.6, 12.0, COL["bus"],
+        "soc_bus",
+        "Address decode  ·  1,250 cells",
+        "SRAM: 0x0000–0x03FF  |  UART: 0x2000_000x")
 
-    # ── soc_sram ──────────────────────────────────────────────────────────────
-    _box(ax, 11.0, 7.2, 2.5, 2.0, COL["sram"],
-         "soc_sram", "1 KB SRAM · 8 800 cells\n8 192 DFFs · 256×32")
+    # ── soc_sram (top-right) ──────────────────────────────────────────────────
+    box(17.2, 11.5, 5.8, 4.0, COL["sram"],
+        "soc_sram",
+        "1 KB SRAM  ·  8,800 cells  ·  8,192 DFFs",
+        "256 × 32-bit · 0x0000–0x03FF")
 
     # ── uart_top container ────────────────────────────────────────────────────
-    uart_cont = FancyBboxPatch((9.55, 1.4), 3.1, 5.2,
-                                boxstyle="round,pad=0.03",
-                                linewidth=1.5, edgecolor=COL["uart"],
-                                facecolor=_rgba(COL["uart"], 0.08), zorder=2)
-    ax.add_patch(uart_cont)
-    _text(ax, 11.1, 6.4, "uart_top", fontsize=10, fontweight="bold",
-          color=COL["uart"], zorder=3)
-    _text(ax, 11.1, 6.1, "487 cells · 300 DFFs", fontsize=7.5,
-          color=MUTED, zorder=3)
+    uc = FancyBboxPatch((13.5, 1.0), 9.5, 8.0,
+                         boxstyle="round,pad=0.05",
+                         linewidth=2.0, edgecolor=COL["uart"],
+                         facecolor=_rgba(COL["uart"], 0.07), zorder=2)
+    ax.add_patch(uc)
+    ax.text(18.25, 8.75, "uart_top",
+            ha="center", fontsize=14, fontweight="bold",
+            color=COL["uart"], zorder=3,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
+    ax.text(18.25, 8.2, "487 cells  ·  300 DFFs",
+            ha="center", fontsize=10, color=MUTED, zorder=3)
 
-    # uart_tx inside uart_top
-    _box(ax, 11.1, 4.8, 2.6, 1.5, COL["tx"],
-         "uart_tx", "TX FSM · 8-state\nbaud cnt + shift reg")
+    # uart_tx
+    box(16.0, 6.0, 4.5, 3.2, COL["tx"],
+        "uart_tx",
+        "TX FSM  ·  5-state",
+        "baud_cnt[15:0]  ·  shift_reg[7:0]")
 
-    # sync_fifo (TX)
-    _box(ax, 11.1, 3.2, 2.6, 1.1, COL["fifo"],
-         "sync_fifo [TX]", "8-deep · fall-through")
+    # sync_fifo [TX]
+    box(16.0, 3.4, 4.5, 2.2, COL["fifo"],
+        "sync_fifo [TX]",
+        "8-deep  ·  fall-through read",
+        "wr_ptr / rd_ptr [3:0]  (extra-bit scheme)")
 
-    # uart_rx inside uart_top
-    _box(ax, 11.1, 1.9, 2.6, 0.9, COL["rx"],
-         "uart_rx + sync_fifo[RX]", "RX sampler · 2-FF sync")
+    # uart_rx + sync_fifo[RX]
+    box(20.6, 4.7, 3.8, 5.6, COL["rx"],
+        "uart_rx",
+        "RX FSM  ·  2-FF sync",
+        "sync_fifo [RX]  8-deep")
 
-    # ── I/O pins ──────────────────────────────────────────────────────────────
-    io_pins = [
-        (0.3, 5.5, "clk", "→"),
-        (0.3, 4.8, "rst_n", "→"),
-        (0.3, 3.6, "uart_rx", "→"),
-        (0.3, 2.6, "uart_tx", "←"),
-        (0.3, 1.8, "irq_out", "←"),
+    # ── I/O pins (left edge) ──────────────────────────────────────────────────
+    pins = [
+        (0.0, 9.8, "clk",      "in"),
+        (0.0, 8.6, "rst_n",    "in"),
+        (0.0, 3.8, "uart_rx",  "in"),
+        (0.0, 2.4, "uart_tx",  "out"),
+        (0.0, 1.2, "irq_out",  "out"),
     ]
-    for px, py, pname, dir_ in io_pins:
-        color = MUTED
-        ax.plot([px, px + 0.5], [py, py], color=color, lw=1.2, zorder=5)
-        sym = "▶" if dir_ == "→" else "◀"
-        _text(ax, px - 0.05, py, sym, fontsize=7, color=color, ha="right")
-        _text(ax, px - 0.55, py, pname, fontsize=8, color=TEXT, ha="right")
+    for px, py, pname, dir_ in pins:
+        c = "#58A6FF" if dir_ == "in" else "#F85149"
+        ax.plot([px, px + 0.5], [py, py], color=c, lw=2.0, zorder=5)
+        sym = "▶" if dir_ == "in" else "◀"
+        ax.text(px - 0.1, py, sym, ha="right", va="center",
+                fontsize=9, color=c, zorder=6)
+        ax.text(px - 0.5, py, pname, ha="right", va="center",
+                fontsize=11, color=TEXT, fontweight="bold", zorder=6)
 
-    # ── Signal buses / connections ────────────────────────────────────────────
-    # CPU ↔ soc_bus (memory interface)
-    _arrow(ax, 4.3, 5.5, 5.75, 5.5, label="mem_valid/ready\nmem_addr[31:0]\nmem_wdata[31:0]\nmem_rdata[31:0]\nmem_wstrb[3:0]",
-           color=COL["cpu"], lw=2.0)
+    # ── Connections ───────────────────────────────────────────────────────────
+    # CPU ↔ soc_bus  (bidirectional 32-bit bus)
+    conn(5.8, 7.8, 7.4, 7.8,
+         COL["cpu"], bidir=True, lw=3.0,
+         label="mem_valid / ready  ·  addr[31:0]  ·  wdata[31:0]  ·  rdata[31:0]  ·  wstrb[3:0]")
 
-    # soc_bus ↔ soc_sram
-    _arrow(ax, 8.25, 7.2, 9.75, 7.2,
-           label="sram_cs/we\nwstrb/addr[7:0]\nwdata/rdata[31:0]",
-           color=COL["sram"], lw=1.8)
+    # soc_bus → soc_sram
+    conn(11.0, 10.5, 14.3, 11.5,
+         COL["sram"], lw=2.4,
+         label="cs / we / wstrb[3:0]  ·  addr[7:0]  ·  wdata / rdata[31:0]")
 
-    # soc_bus ↔ uart_top
-    _arrow(ax, 8.25, 3.5, 9.55, 3.5,
-           label="addr[2:0]\nwdata/rdata[7:0]\nwen / ren",
-           color=COL["uart"], lw=1.8)
+    # soc_bus → uart_top
+    conn(11.0, 5.0, 13.5, 5.5,
+         COL["uart"], lw=2.4,
+         label="addr[2:0]  ·  wdata/rdata[7:0]  ·  wen / ren")
 
-    # uart_top → CPU irq
-    ax.annotate("", xy=(2.4, 3.3), xytext=(9.55, 2.2),
-                arrowprops=dict(arrowstyle="->", color=COL["rx"],
-                                lw=1.4, connectionstyle="arc3,rad=0.3"))
-    _text(ax, 5.8, 2.3, "irq (uart_irq → cpu_irq[0])",
-          fontsize=7.5, color=COL["rx"])
+    # sync_fifo[TX] → uart_tx
+    conn(16.0, 4.5, 16.0, 4.4,
+         COL["tx"], lw=1.8,
+         label="tx_data[7:0]  tx_start")
 
-    # TX FIFO → uart_tx
-    _arrow(ax, 11.1, 3.75, 11.1, 4.05,
-           label="tx_start\ntx_data[7:0]", color=COL["tx"], lw=1.2)
+    # uart_tx → TX pin (right exit)
+    ax.annotate("", xy=(24.0, 6.0), xytext=(18.25, 6.0),
+                arrowprops=dict(arrowstyle="-|>", color=COL["tx"],
+                                lw=2.2, mutation_scale=14), zorder=6)
+    ax.text(23.5, 6.4, "uart_tx", ha="right", va="bottom",
+            fontsize=11, fontweight="bold", color=COL["tx"], zorder=7)
 
-    # uart_tx → uart_tx serial line (pin exit)
-    ax.annotate("", xy=(13.7, 4.8), xytext=(12.4, 4.8),
-                arrowprops=dict(arrowstyle="->", color=COL["tx"],
-                                lw=1.4, connectionstyle="arc3,rad=0.0"))
-    _text(ax, 13.2, 5.05, "uart_tx", fontsize=7.5, color=COL["tx"])
+    # uart_rx pin → uart_rx block (from right)
+    ax.annotate("", xy=(22.5, 3.0), xytext=(24.0, 3.0),
+                arrowprops=dict(arrowstyle="-|>", color=COL["rx"],
+                                lw=2.2, mutation_scale=14), zorder=6)
+    ax.text(23.5, 2.6, "uart_rx", ha="right", va="top",
+            fontsize=11, fontweight="bold", color=COL["rx"], zorder=7)
 
-    # uart_rx serial line (pin entry)
-    ax.annotate("", xy=(12.4, 1.9), xytext=(13.7, 1.9),
-                arrowprops=dict(arrowstyle="->", color=COL["rx"],
-                                lw=1.4, connectionstyle="arc3,rad=0.0"))
-    _text(ax, 13.2, 2.15, "uart_rx", fontsize=7.5, color=COL["rx"])
+    # uart_top → CPU irq (curved, below all blocks)
+    ax.annotate("", xy=(3.2, 1.5), xytext=(14.0, 1.5),
+                arrowprops=dict(arrowstyle="-|>", color=COL["rx"],
+                                lw=2.0, mutation_scale=14,
+                                connectionstyle="arc3,rad=0.15"), zorder=5)
+    ax.text(8.6, 1.1, "irq  →  cpu_irq[0]",
+            ha="center", fontsize=11, fontweight="bold",
+            color=COL["rx"], zorder=6,
+            bbox=dict(facecolor=BG, edgecolor=COL["rx"],
+                      alpha=0.92, pad=3, linewidth=1.2,
+                      boxstyle="round,pad=0.25"))
 
-    # clk fan-out
-    ax.plot([0.8, 0.8], [5.5, 1.0], color=SUBTLE, lw=1, ls="--", zorder=2)
-    for cy in [5.5, 5.5, 7.2, 5.5, 3.2, 4.8, 1.9]:
-        ax.plot([0.8, 0.55], [cy, cy], color=SUBTLE, lw=0.8, ls="--", zorder=2)
+    # clk / rst_n dashed fan-out
+    for cy in [7.5, 7.5, 11.5, 5.5]:
+        ax.plot([0.5, 0.85], [cy, cy], color=SUBTLE, lw=0.9, ls="--", zorder=2)
+    ax.plot([0.85, 0.85], [1.5, 12.5], color=SUBTLE, lw=0.9, ls="--", zorder=2)
 
-    ax.set_title("rv32_soc Module Hierarchy — sky130A  |  Yosys 0.63 synthesis",
-                 color=TEXT, fontsize=11, pad=10)
+    ax.set_title(
+        "rv32_soc  Module Hierarchy  —  sky130A  ·  Yosys 0.63  ·  28,313 generic cells  ·  10,076 DFFs",
+        color=TEXT, fontsize=13, pad=12,
+        path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
 
     out = os.path.join(IMGS, "soc_hierarchy.png")
     fig.savefig(out, dpi=180, bbox_inches="tight", facecolor=BG)
@@ -201,7 +265,7 @@ def gen_soc_hierarchy():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2.  BLOCK DIAGRAM — cell counts + data-flow
+# 2.  BLOCK DIAGRAM — cell counts + data-flow  (redesigned)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Real Yosys numbers (28,313 total; DFFs=10,076)
@@ -217,152 +281,145 @@ TOTAL_CELLS = sum(v[0] for v in BLOCKS.values())
 TOTAL_DFF   = sum(v[1] for v in BLOCKS.values())
 
 def gen_soc_block_diagram():
-    fig = plt.figure(figsize=(14, 9), facecolor=BG)
-    ax = fig.add_axes([0.02, 0.06, 0.96, 0.86])
+    W, H = 22, 14
+    fig = plt.figure(figsize=(20, 13), facecolor=BG)
+    ax = fig.add_axes([0.01, 0.04, 0.98, 0.90])
     ax.set_facecolor(BG)
-    ax.set_xlim(0, 14); ax.set_ylim(0, 9)
+    ax.set_xlim(0, W); ax.set_ylim(0, H)
     ax.axis("off")
 
-    # Layout: PicoRV32 (big, left), SRAM (big, middle-top),
-    #         uart_top (medium, middle-bottom), soc_bus (centre),
-    #         soc_top (small, top-right)
-    layout = {
-        #  name         cx    cy    w_base  h_base
-        "picorv32": (2.5,  4.5, None, None),
-        "soc_sram": (7.5,  7.0, None, None),
-        "uart_top": (7.5,  2.5, None, None),
-        "soc_bus":  (5.0,  4.5, None, None),
-        "soc_top":  (11.5, 4.5, None, None),
+    # Fixed positions — clear left / centre / right arrangement
+    # CPU: left column; soc_bus: centre bridge; SRAM: top-right; uart_top: bottom-right
+    positions = {
+        "picorv32": (3.8, 7.0),
+        "soc_bus":  (9.0, 7.0),
+        "soc_sram": (16.0, 10.5),
+        "uart_top": (16.0, 4.0),
+        "soc_top":  (9.0, 12.5),
     }
 
-    # Size boxes proportional to sqrt(cells) — log scale feels better
-    def box_size(cells):
-        scale = 0.9 * math.sqrt(cells / TOTAL_CELLS) * 8
-        return max(scale, 1.0), max(scale * 0.75, 0.7)
+    # Box size: area ∝ cells, constrained to reasonable min
+    def box_dims(cells):
+        s = 2.0 * math.sqrt(cells / TOTAL_CELLS) * 5.5
+        s = max(s, 1.4)
+        return s, max(s * 0.72, 1.0)
 
     drawn = {}
     for name, (cells, dffs, wires, color) in BLOCKS.items():
-        cx, cy, _, _ = layout[name]
-        w, h = box_size(cells)
+        cx, cy = positions[name]
+        w, h = box_dims(cells)
         pct = cells / TOTAL_CELLS * 100
 
-        # box
-        r, g, b, _ = _rgba(color, 0.35)
+        r, g, b, _ = _rgba(color, 0.28)
         rect = FancyBboxPatch((cx - w/2, cy - h/2), w, h,
-                               boxstyle="round,pad=0.02",
-                               linewidth=2.0, edgecolor=color,
+                               boxstyle="round,pad=0.03",
+                               linewidth=2.2, edgecolor=color,
                                facecolor=(r, g, b, 0.30), zorder=3)
         ax.add_patch(rect)
 
-        # module name
-        _text(ax, cx, cy + h*0.22, name, fontsize=10, fontweight="bold",
-              color="white", zorder=4)
+        # Module name — large
+        ax.text(cx, cy + h * 0.18, name,
+                ha="center", va="center",
+                fontsize=13, fontweight="bold", color="white", zorder=4,
+                path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
 
-        # stats row
-        stats = (f"cells: {cells:,}  ({pct:.1f} %)  "
-                 f"│  DFFs: {dffs:,}  │  wires: {wires:,}")
-        _text(ax, cx, cy - h*0.12, stats, fontsize=7.5, color=MUTED, zorder=4)
+        # Stats below name
+        stats_line1 = f"{cells:,} cells  ({pct:.0f} %)"
+        stats_line2 = f"{dffs:,} DFFs  ·  {wires:,} wires"
+        ax.text(cx, cy - h * 0.08, stats_line1,
+                ha="center", va="center", fontsize=10, color=MUTED, zorder=4,
+                path_effects=[pe.withStroke(linewidth=1.5, foreground=BG)])
+        if h > 1.8:
+            ax.text(cx, cy - h * 0.30, stats_line2,
+                    ha="center", va="center", fontsize=9.5, color=SUBTLE, zorder=4,
+                    path_effects=[pe.withStroke(linewidth=1.5, foreground=BG)])
 
         drawn[name] = (cx, cy, w, h)
 
     # ── Connections ───────────────────────────────────────────────────────────
-    # CPU → soc_bus
+    def arrow(x0, y0, x1, y1, color, label="", lw=2.2, rad=0.0, bidir=False):
+        sty = "<|-|>" if bidir else "-|>"
+        ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
+                    arrowprops=dict(arrowstyle=sty, color=color, lw=lw,
+                                    mutation_scale=14,
+                                    connectionstyle=f"arc3,rad={rad}"),
+                    zorder=5)
+        if label:
+            mx, my = (x0+x1)/2 + 0.05, (y0+y1)/2 + 0.20
+            ax.text(mx, my, label, ha="center", va="center",
+                    fontsize=9.5, color=color, fontweight="bold", zorder=6,
+                    bbox=dict(facecolor=BG, edgecolor="none", alpha=0.85, pad=2))
+
     cpu  = drawn["picorv32"]
     bus  = drawn["soc_bus"]
     sram = drawn["soc_sram"]
     uart = drawn["uart_top"]
     top  = drawn["soc_top"]
 
-    def edge(src, dst, label, color, rad=0.0, lw=2.0):
-        sx, sy = src[0] + src[2]/2, src[1]
-        dx, dy = dst[0] - dst[2]/2, dst[1]
-        ax.annotate("", xy=(dx, dy), xytext=(sx, sy),
-                    arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
-                                    mutation_scale=12,
-                                    connectionstyle=f"arc3,rad={rad}"),
-                    zorder=5)
-        mx, my = (sx + dx)/2, (sy + dy)/2 + 0.15
-        _text(ax, mx, my, label, fontsize=7, color=color,
-              bbox=dict(facecolor=BG, edgecolor="none", alpha=0.8, pad=1))
-
-    # Two-way bus between CPU and soc_bus
-    ax.annotate("", xy=(bus[0] - bus[2]/2, bus[1] + 0.15),
-                xytext=(cpu[0] + cpu[2]/2, cpu[1] + 0.15),
-                arrowprops=dict(arrowstyle="-|>", color=COL["cpu"],
-                                lw=2.2, mutation_scale=12,
-                                connectionstyle="arc3,rad=0.0"), zorder=5)
-    ax.annotate("", xy=(cpu[0] + cpu[2]/2, cpu[1] - 0.15),
-                xytext=(bus[0] - bus[2]/2, bus[1] - 0.15),
-                arrowprops=dict(arrowstyle="-|>", color=COL["bus"],
-                                lw=2.2, mutation_scale=12,
-                                connectionstyle="arc3,rad=0.0"), zorder=5)
-    _text(ax, (cpu[0] + bus[0]) / 2, cpu[1] + 0.55,
-          "32-bit memory bus\n(mem_valid/ready/addr/wdata/rdata/wstrb)",
-          fontsize=7.5, color=COL["cpu"])
+    # CPU ↔ soc_bus  (bidirectional, two parallel arrows for visual clarity)
+    arrow(cpu[0]+cpu[2]/2, cpu[1]+0.2, bus[0]-bus[2]/2, bus[1]+0.2,
+          COL["cpu"], lw=2.8, bidir=False)
+    arrow(bus[0]-bus[2]/2, bus[1]-0.2, cpu[0]+cpu[2]/2, bus[1]-0.2,
+          COL["bus"], lw=2.8, bidir=False)
+    ax.text((cpu[0]+bus[0])/2, cpu[1]+0.75,
+            "32-bit memory bus\nmem_valid / ready / addr[31:0] / wdata / rdata / wstrb[3:0]",
+            ha="center", va="center", fontsize=10, color=COL["cpu"], zorder=6,
+            bbox=dict(facecolor=BG, edgecolor=COL["cpu"], alpha=0.90,
+                      pad=3, linewidth=1.0, boxstyle="round,pad=0.3"))
 
     # soc_bus → soc_sram
-    bsx, bsy = bus[0] + bus[2]/2, bus[1]
-    rsx, rsy = sram[0] - sram[2]/2, sram[1]
-    ax.annotate("", xy=(rsx, rsy), xytext=(bsx, bsy + 0.2),
-                arrowprops=dict(arrowstyle="-|>", color=COL["sram"],
-                                lw=1.8, mutation_scale=12,
-                                connectionstyle="arc3,rad=-0.25"), zorder=5)
-    _text(ax, (bsx + rsx)/2 + 0.4, (bsy + rsy)/2 + 0.3,
-          "sram_cs/we/addr[7:0]\nwdata/rdata[31:0]", fontsize=7, color=COL["sram"])
+    arrow(bus[0]+bus[2]/2, bus[1]+0.3, sram[0]-sram[2]/2, sram[1],
+          COL["sram"], lw=2.4, rad=-0.15,
+          label="cs / we / wstrb[3:0]\naddr[7:0]  ·  wdata / rdata[31:0]")
 
     # soc_bus → uart_top
-    ax.annotate("", xy=(uart[0] - uart[2]/2, uart[1]), xytext=(bsx, bsy - 0.2),
-                arrowprops=dict(arrowstyle="-|>", color=COL["uart"],
-                                lw=1.8, mutation_scale=12,
-                                connectionstyle="arc3,rad=0.25"), zorder=5)
-    _text(ax, (bsx + uart[0])/2 + 0.3, (bsy + uart[1])/2 - 0.3,
-          "addr[2:0]/wdata/rdata[7:0]\nwen/ren", fontsize=7, color=COL["uart"])
+    arrow(bus[0]+bus[2]/2, bus[1]-0.3, uart[0]-uart[2]/2, uart[1],
+          COL["uart"], lw=2.4, rad=0.15,
+          label="addr[2:0]  ·  wdata/rdata[7:0]  ·  wen/ren")
 
-    # uart_top → CPU irq
-    ax.annotate("", xy=(cpu[0], cpu[1] - cpu[3]/2),
-                xytext=(uart[0], uart[1] + uart[3]/2),
+    # uart_top → CPU  irq
+    ax.annotate("", xy=(cpu[0], cpu[1]-cpu[3]/2+0.4),
+                xytext=(uart[0]-uart[2]/2, uart[1]),
                 arrowprops=dict(arrowstyle="-|>", color=COL["rx"],
-                                lw=1.5, mutation_scale=10,
-                                connectionstyle="arc3,rad=0.4"), zorder=5)
-    _text(ax, 4.2, 1.8, "IRQ → cpu_irq[0]", fontsize=7.5, color=COL["rx"])
+                                lw=2.0, mutation_scale=14,
+                                connectionstyle="arc3,rad=0.35"), zorder=5)
+    ax.text(5.8, 2.2, "IRQ → cpu_irq[0]",
+            ha="center", fontsize=11, fontweight="bold", color=COL["rx"], zorder=6,
+            bbox=dict(facecolor=BG, edgecolor=COL["rx"],
+                      alpha=0.92, pad=3, linewidth=1.2,
+                      boxstyle="round,pad=0.3"))
 
-    # soc_top → rst distribute (dashed)
+    # soc_top → rst_n_sync distribute (dashed)
     for name in ["picorv32", "soc_bus", "soc_sram", "uart_top"]:
         dx, dy, dw, dh = drawn[name]
-        ax.annotate("", xy=(dx, dy + dh/2),
-                    xytext=(top[0], top[1]),
-                    arrowprops=dict(arrowstyle="-", color=COL["top"],
-                                    lw=0.8, ls="dashed",
-                                    connectionstyle="arc3,rad=0.1"), zorder=4)
-    _text(ax, 10.8, 6.3, "rst_n_sync", fontsize=7, color=COL["top"])
+        ax.plot([top[0], dx], [top[1]-top[3]/2, dy+dh/2],
+                color=COL["top"], lw=0.9, ls="--", alpha=0.6, zorder=3)
+    ax.text(top[0]+1.0, top[1]-top[3]/2-0.5, "rst_n_sync",
+            fontsize=9.5, color=COL["top"], ha="center", style="italic", zorder=5)
 
-    # I/O pin annotations
-    io = [
-        (0.2, 4.5, "clk  /  rst_n", "→"),
-        (0.2, 2.5, "uart_rx →", "→"),
-        (0.2, 1.9, "← uart_tx", "←"),
-        (13.8, 4.5, "← irq_out", "←"),
-    ]
-    for px, py, label, d in io:
-        _text(ax, px, py, label, fontsize=8, color=MUTED,
-              ha="left" if d == "→" else "right")
+    # I/O labels
+    ax.text(0.3, 7.0, "clk\nrst_n", ha="left", va="center",
+            fontsize=11, color="#58A6FF", fontweight="bold", zorder=5)
+    ax.text(0.3, 2.8, "uart_rx →\n← uart_tx\n← irq_out",
+            ha="left", va="center", fontsize=11, color="#F85149",
+            fontweight="bold", zorder=5)
 
-    # Title + legend
+    # ── Title + legend ────────────────────────────────────────────────────────
     ax.set_title(
-        f"rv32_soc Block Diagram  ·  sky130A  ·  "
-        f"28,313 generic cells (Yosys 0.63)  ·  10,076 DFFs  ·  "
-        f"50 MHz  ·  Box area ∝ cell count",
-        color=TEXT, fontsize=10, pad=10)
+        "rv32_soc  Block Diagram  ·  sky130A  ·  "
+        "28,313 generic cells  (Yosys 0.63)  ·  10,076 DFFs  ·  50 MHz  ·  "
+        "Box area ∝ cell count",
+        color=TEXT, fontsize=12, pad=10,
+        path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
 
     legend_patches = [
-        mpatches.Patch(facecolor=COL[k], alpha=0.6,
-                       label=f"{n}  ({BLOCKS[n][0]:,} cells)")
-        for k, n in [("cpu","picorv32"), ("sram","soc_sram"),
-                     ("uart","uart_top"), ("bus","soc_bus"), ("top","soc_top")]
+        mpatches.Patch(facecolor=BLOCKS[n][3], alpha=0.7,
+                       label=f"{n}  —  {BLOCKS[n][0]:,} cells  ({BLOCKS[n][0]/TOTAL_CELLS*100:.0f} %)")
+        for n in ["picorv32", "soc_sram", "uart_top", "soc_bus", "soc_top"]
     ]
     ax.legend(handles=legend_patches, loc="lower right",
               facecolor=PANEL, edgecolor=BORDER, labelcolor=TEXT,
-              fontsize=8, framealpha=0.9)
+              fontsize=10.5, framealpha=0.95)
 
     out = os.path.join(IMGS, "soc_block_diagram.png")
     fig.savefig(out, dpi=180, bbox_inches="tight", facecolor=BG)

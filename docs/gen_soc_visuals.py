@@ -178,7 +178,7 @@ def gen_soc_architecture():
         linestyle="--", zorder=1,
     )
     ax.add_patch(rect_ut)
-    ax.text(UX + UW / 2, UY + UH - 0.40, "uart_top",
+    ax.text(UX + UW / 2, UY + UH + 0.22, "uart_top",
             ha="center", fontsize=17, fontweight="bold",
             color=UART_EC, zorder=3)
 
@@ -243,17 +243,18 @@ def gen_soc_architecture():
     ax.text(19.6, TX_Y, "TX", ha="left", va="center",
             fontsize=15, fontweight="bold", color=TX_EC, zorder=6)
 
-    # 8. RX pin → uart_rx  (L-shape: horizontal bottom rail, then up)
-    RX_RAIL  = 0.52            # y of horizontal rail (below uart_rx bottom)
-    RX_RIGHT = RXX + RXW       # right edge of uart_rx = 9.4
-    RX_MID_Y = RXY + RXH / 2  # centre of uart_rx = 2.05
+    # 8. RX pin → uart_rx  (L-shape: horizontal bottom rail → vertical up centre)
+    #    Rail runs below the uart_top container; turns up at uart_rx centre-x.
+    RX_RAIL  = 0.10            # y of horizontal rail (below uart_rx bottom y=0.75)
+    RX_CTR_X = RXX + RXW / 2  # centre-x of uart_rx block = 7.6
+    RX_BOT_Y = RXY             # bottom edge of uart_rx = 0.75
 
-    ax.plot([19.5, RX_RIGHT], [RX_RAIL, RX_RAIL],
-            color=RX_EC, lw=2.4, zorder=4, solid_capstyle="round")
-    ax.annotate("", xy=(RX_RIGHT, RX_MID_Y),
-                xytext=(RX_RIGHT, RX_RAIL),
+    ax.annotate("", xy=(RX_CTR_X, RX_BOT_Y),
+                xytext=(RX_CTR_X, RX_RAIL),
                 arrowprops=dict(arrowstyle="-|>", color=RX_EC, lw=2.4,
                                 mutation_scale=18), zorder=5)
+    ax.plot([19.5, RX_CTR_X], [RX_RAIL, RX_RAIL],
+            color=RX_EC, lw=2.4, zorder=4, solid_capstyle="round")
     ax.text(19.6, RX_RAIL, "RX", ha="left", va="center",
             fontsize=15, fontweight="bold", color=RX_EC, zorder=6)
 
@@ -623,110 +624,173 @@ def gen_uart_write_waveform():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def gen_interrupt_flow():
-    T0, T1 = 7_900, 11_200  # ns
+    # ── Timeline parameters ──────────────────────────────────────────────────
+    # Zoomed to show: RX frame reception + full ISR lifecycle
+    # Use stretched time axis so close events are clearly separated
+    T0, T1 = 7_500, 11_600   # ns — wider window than original
 
-    BIT = 160   # ns per uart bit
-    # RX 8N1 frame for 0xA5 ends at t=9990ns
-    T_RX_START = 9_990 - 10 * BIT  # = 8390 ns
+    BIT = 160   # ns per uart bit (fast sim)
+    T_RX_START = 9_990 - 10 * BIT   # = 8390 ns
     T_RX_END   = 9_990
-    bits_A5 = [(0xA5 >> i) & 1 for i in range(8)]
+    bits_A5    = [(0xA5 >> i) & 1 for i in range(8)]
 
-    # uart_rx signal
-    rx_events = [(T0, 1), (T_RX_START, 0)]  # start bit
+    # uart_rx events
+    rx_events = [(T0, 1), (T_RX_START, 0)]
     t = T_RX_START + BIT
     for b in bits_A5:
-        rx_events.append((t, b))
-        t += BIT
-    rx_events.append((t, 1))  # stop bit
-
-    # irq_out (from VCD: HIGH at 10010, LOW at 10270)
-    T_IRQ_HI = 10_010
-    T_IRQ_LO = 10_270
-    irq_events = [(T0, 0), (T_IRQ_HI, 1), (T_IRQ_LO, 0)]
-
-    # mem_addr bus segments (from VCD)
-    IDLE_ADDR = "0x0000_003C"   # main() spin loop
-    ISR_ENTRY  = "0x0000_0010"  # ISR entry — _irq_entry
-    ISR_C1     = "0x0000_0014"  # save context
-    ISR_C2     = "0x0000_0018"  # ...
-    RX_READ    = "0x2000_0004"  # UART RX_DATA read
-
-    T_ISR_FETCH   = 10_090
-    T_ISR_C1      = 10_150
-    T_ISR_C2      = 10_210
-    T_ISR_RX_READ = 10_250
-    T_MAIN_RESUME = 10_350
-
-    addr_segs = [
-        (T0,           T_IRQ_HI,      IDLE_ADDR),
-        (T_ISR_FETCH,  T_ISR_C1,      ISR_ENTRY),
-        (T_ISR_C1,     T_ISR_C2,      ISR_C1),
-        (T_ISR_C2,     T_ISR_RX_READ, ISR_C2),
-        (T_ISR_RX_READ,T_MAIN_RESUME, RX_READ),
-        (T_MAIN_RESUME,T1,            IDLE_ADDR),
-    ]
-
-    fig, axes = gtk_figure(
-        4,
-        "Interrupt Flow — RX Byte → IRQ Assertion → ISR Reads RX_DATA → IRQ Clear",
-        height_ratios=[0.65, 1.2, 0.9, 1.2],
-    )
-    for i, ax in enumerate(axes):
-        _setup_gtk_ax(ax, T0, T1, last=(i == len(axes) - 1))
-
-    draw_clk(axes[0], T0, T1, period=10, name="clk")
-
-    # uart_rx
-    draw_bit(axes[1], rx_events, T0, T1, color=GTK_RX, name="uart_rx")
-    # Frame annotations
-    axes[1].text((T_RX_START + BIT / 2), 1.38, "START",
-                 ha="center", fontsize=7.5, color="#16A34A", fontweight="bold")
-    axes[1].text((T_RX_START + 4.5 * BIT), 1.38, "0xA5  (8 data bits  LSB-first)",
-                 ha="center", fontsize=8, color=GTK_RX, fontweight="bold")
-    axes[1].text((T_RX_END + BIT / 2), 1.38, "STOP",
-                 ha="center", fontsize=7.5, color="#16A34A", fontweight="bold")
-    axes[1].text((T0 + T_RX_START) / 2, 0.50, "IDLE",
-                 ha="center", fontsize=9, color="#3A3A6A", style="italic")
+        rx_events.append((t, b));  t += BIT
+    rx_events.append((t, 1))      # stop bit
 
     # irq_out
-    draw_bit(axes[2], irq_events, T0, T1, color=GTK_IRQ, name="irq_out")
-    anno(axes[2], T_IRQ_HI, 1.0, "ASSERT\n(rx_ready=1)",
-         GTK_IRQ, fs=8, ya=1.35)
-    anno(axes[2], T_IRQ_LO, 1.0, "CLEAR\n(RX_DATA read)",
-         "#3FB950", fs=8, ya=1.35)
-    axes[2].text((T_IRQ_HI + T_IRQ_LO) / 2, 0.50,
-                 f"HIGH for {T_IRQ_LO - T_IRQ_HI} ns ({(T_IRQ_LO-T_IRQ_HI)//10} clocks)",
-                 ha="center", fontsize=7.5, color=GTK_IRQ, fontweight="bold")
+    T_IRQ_HI = 10_010;   T_IRQ_LO = 10_270
+    irq_events = [(T0, 0), (T_IRQ_HI, 1), (T_IRQ_LO, 0)]
 
-    # mem_addr
-    draw_bus(axes[3], addr_segs, T0, T1, color=GTK_BUS, name="mem_addr",
-             font_size=7.8)
+    # ISR phase timestamps
+    T_ISR_FETCH   = 10_090   # CPU jumps to 0x10
+    T_ISR_C1      = 10_150
+    T_ISR_C2      = 10_210
+    T_ISR_RX_READ = 10_250   # ISR reads RX_DATA → clears irq
+    T_RETIRQ      = 10_330   # retirq instruction
+    T_MAIN_RESUME = 10_400   # back in main()
 
-    # Annotations on mem_addr
-    anno(axes[3], T_ISR_FETCH, 0.8,
-         "CPU jumps to\n0x10 (ISR)", GTK_ANNO, fs=7.5, ya=1.37)
-    anno(axes[3], T_ISR_RX_READ, 0.8,
-         "ISR reads\nRX_DATA", "#79C0FF", fs=7.5, ya=1.37)
-    anno(axes[3], T_MAIN_RESUME, 0.8,
-         "retirq\nresumes main()", "#3FB950", fs=7.5, ya=1.37)
+    # mem_addr bus segments
+    addr_segs = [
+        (T0,             T_IRQ_HI,      "0x0000_003C  (main spin)"),
+        (T_ISR_FETCH,    T_ISR_C1,      "0x0010  _irq_entry"),
+        (T_ISR_C1,       T_ISR_C2,      "0x0014  save ctx"),
+        (T_ISR_C2,       T_ISR_RX_READ, "0x0018"),
+        (T_ISR_RX_READ,  T_RETIRQ,      "0x2000_0004  RX_DATA"),
+        (T_RETIRQ,       T_MAIN_RESUME, "0x001C  retirq"),
+        (T_MAIN_RESUME,  T1,            "0x0000_003C  (main spin)"),
+    ]
 
-    # Shared vertical markers
-    for ax in axes:
-        vmark(ax, T_IRQ_HI, GTK_IRQ)
-        vmark(ax, T_ISR_FETCH, GTK_ANNO)
-        vmark(ax, T_ISR_RX_READ, "#79C0FF")
-        vmark(ax, T_IRQ_LO, "#3FB950")
-        vmark(ax, T_MAIN_RESUME, "#3FB950")
+    # ── Figure: 4 wide rows + larger heights for breathing room ──────────────
+    N = 4
+    ROW_H = 2.2   # inches per unit height-ratio
+    height_ratios = [0.55, 1.8, 1.2, 1.8]
+    total_h = sum(height_ratios) * ROW_H + 1.0
 
-    # Gap label (CPU taking interrupt — between irq assert and ISR fetch)
-    axes[3].annotate(
-        "CPU takes interrupt\n(saves PC → x3, PC → 0x10)",
-        xy=((T_IRQ_HI + T_ISR_FETCH) / 2, 0.50),
-        fontsize=7.5, color="#9CA3AF", ha="center", style="italic",
-        xycoords="data",
-        bbox=dict(boxstyle="round,pad=0.18", fc=GTK_BG,
-                  ec="#444466", alpha=0.92, lw=0.6),
+    fig, axes = plt.subplots(
+        N, 1,
+        figsize=(18, total_h),
+        sharex=True,
+        gridspec_kw={"hspace": 0.0, "height_ratios": height_ratios},
     )
+    fig.patch.set_facecolor(GTK_BG)
+    fig.suptitle(
+        "Interrupt Flow — UART RX Byte  →  IRQ Assertion  →  ISR Reads RX_DATA  →  IRQ Clear",
+        fontsize=16, color=GTK_WHITE, fontweight="bold", y=0.997, x=0.55,
+    )
+
+    # Custom ylim: more space above y=1 for annotations
+    Y_LO, Y_HI = -0.35, 2.10
+    for i, ax in enumerate(axes):
+        ax.set_facecolor(GTK_BG)
+        ax.set_xlim(T0, T1)
+        ax.set_ylim(Y_LO, Y_HI)
+        for sp in ax.spines.values():
+            sp.set_color(GTK_GRID); sp.set_linewidth(0.6)
+        ax.tick_params(left=False, right=False, bottom=False,
+                       labelleft=False, labelbottom=False)
+        ax.axhline(Y_HI, color=GTK_GRID, lw=0.6)
+    # Bottom axis: time labels
+    axes[-1].tick_params(bottom=True, labelbottom=True,
+                         colors=GTK_NAMES, labelsize=10)
+    axes[-1].set_xlabel("Time (ns)", fontsize=11, color=GTK_NAMES, labelpad=5)
+    for lbl in axes[-1].get_xticklabels():
+        lbl.set_color(GTK_NAMES)
+
+    # ── Row 0: clk ────────────────────────────────────────────────────────────
+    draw_clk(axes[0], T0, T1, period=10, name="clk")
+
+    # ── Row 1: uart_rx ────────────────────────────────────────────────────────
+    draw_bit(axes[1], rx_events, T0, T1, color=GTK_RX, name="uart_rx")
+
+    # IDLE label (before frame)
+    axes[1].text((T0 + T_RX_START) / 2, 0.50, "IDLE  (line HIGH)",
+                 ha="center", fontsize=11, color="#555580", style="italic")
+
+    # Frame segment labels (inside the waveform region)
+    axes[1].text(T_RX_START + BIT * 0.5, 1.72, "START",
+                 ha="center", fontsize=9, color="#16A34A", fontweight="bold")
+    axes[1].text(T_RX_START + BIT * 4.5, 1.72,
+                 "0xA5  (1010 0101  LSB-first: 1,0,1,0,0,1,0,1)",
+                 ha="center", fontsize=10, color=GTK_RX, fontweight="bold")
+    axes[1].text(T_RX_END + BIT * 0.5, 1.72, "STOP",
+                 ha="center", fontsize=9, color="#16A34A", fontweight="bold")
+
+    # Bracket showing full 8N1 frame
+    FR_Y = 1.95
+    axes[1].annotate("", xy=(T_RX_END, FR_Y), xytext=(T_RX_START, FR_Y),
+                     arrowprops=dict(arrowstyle="<->", color="#444466", lw=1.2))
+    axes[1].text((T_RX_START + T_RX_END) / 2, FR_Y + 0.08,
+                 f"8N1 frame  ({T_RX_END - T_RX_START} ns = 10 × {BIT} ns bits)",
+                 ha="center", fontsize=9, color="#888899")
+
+    # ── Row 2: irq_out ────────────────────────────────────────────────────────
+    draw_bit(axes[2], irq_events, T0, T1, color=GTK_IRQ, name="irq_out")
+
+    # ASSERT annotation (above)
+    anno(axes[2], T_IRQ_HI, 1.0, "ASSERT\n(rx_ready = 1)",
+         GTK_IRQ, fs=9.5, ya=1.72)
+    # CLEAR annotation (above, shifted right to avoid overlap)
+    anno(axes[2], T_IRQ_LO, 1.0, "CLEAR\n(RX_DATA read)",
+         "#3FB950", fs=9.5, ya=1.72)
+    # Duration label inside the HIGH pulse
+    axes[2].text((T_IRQ_HI + T_IRQ_LO) / 2, 0.50,
+                 f"{T_IRQ_LO - T_IRQ_HI} ns  ({(T_IRQ_LO - T_IRQ_HI) // 10} clocks)",
+                 ha="center", fontsize=10, color=GTK_IRQ, fontweight="bold")
+
+    # ── Row 3: mem_addr ───────────────────────────────────────────────────────
+    draw_bus(axes[3], addr_segs, T0, T1, color=GTK_BUS, name="mem_addr",
+             font_size=8.5)
+
+    # Alternating annotation heights to prevent overlap between close events
+    # Below for T_ISR_FETCH; above for T_ISR_RX_READ / T_MAIN_RESUME
+    anno(axes[3], T_ISR_FETCH,   0.5, "CPU jumps to\n0x10  (ISR entry)",
+         GTK_ANNO,   fs=9, ya=1.72)
+    anno(axes[3], T_ISR_RX_READ, 0.5, "ISR reads\nRX_DATA → clears irq",
+         "#79C0FF",  fs=9, ya=1.72, side="bottom")
+    anno(axes[3], T_MAIN_RESUME, 0.5, "retirq →\nresumes main()",
+         "#3FB950",  fs=9, ya=1.72)
+
+    # "CPU takes interrupt" span label between irq_assert and ISR fetch
+    MID_X = (T_IRQ_HI + T_ISR_FETCH) / 2
+    axes[3].annotate(
+        "CPU handles interrupt\n(saves PC→x3, jumps 0x10)",
+        xy=(MID_X, 0.50), fontsize=9, color="#9CA3AF",
+        ha="center", style="italic", xycoords="data",
+        bbox=dict(boxstyle="round,pad=0.22", fc=GTK_BG,
+                  ec="#444466", alpha=0.92, lw=0.8),
+    )
+
+    # ── Shared vertical markers (only key phase boundaries) ──────────────────
+    # Only mark the 4 most important transitions to avoid clutter
+    KEY_MARKS = [
+        (T_RX_END,       "#16A34A",  "RX\ncomplete"),
+        (T_IRQ_HI,       GTK_IRQ,    "IRQ↑"),
+        (T_ISR_FETCH,    GTK_ANNO,   "ISR\nstart"),
+        (T_MAIN_RESUME,  "#3FB950",  "retirq"),
+    ]
+    for ax in axes:
+        for t, c, _ in KEY_MARKS:
+            ax.axvline(t, color=c, lw=1.5, linestyle="--", alpha=0.55, zorder=1)
+
+    # Phase labels on the top clk row
+    PHASE_REGIONS = [
+        (T0,          T_RX_START,  "IDLE",                "#555580"),
+        (T_RX_START,  T_RX_END,    "RX frame 0xA5",       GTK_RX),
+        (T_IRQ_HI,    T_ISR_FETCH, "CPU interrupt\nlatency", GTK_IRQ),
+        (T_ISR_FETCH, T_MAIN_RESUME,"ISR execution",       GTK_ANNO),
+        (T_MAIN_RESUME, T1,        "main() resumed",      "#3FB950"),
+    ]
+    for t_a, t_b, label, c in PHASE_REGIONS:
+        cx = (t_a + t_b) / 2
+        if t_b - t_a < 50:
+            continue   # skip if too narrow to label
+        axes[0].text(cx, 0.50, label, ha="center", fontsize=8,
+                     color=c, style="italic",
+                     bbox=dict(fc=GTK_BG, ec="none", alpha=0.0, pad=0))
 
     out = os.path.join(IMG_DIR, "interrupt_flow.png")
     plt.savefig(out, dpi=180, bbox_inches="tight",
