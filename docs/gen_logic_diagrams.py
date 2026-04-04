@@ -135,163 +135,161 @@ def _bus_label(ax, x, y, txt, color, fs=9, zo=8):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1.  SoC HIERARCHY DIAGRAM  — clean grid layout
+# 1.  SoC HIERARCHY DIAGRAM  — structural containment view
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def gen_soc_hierarchy():
     """
-    Clean grid layout — strictly horizontal/vertical connections only.
+    Structural containment hierarchy showing parent-child nesting and port
+    connections.  All connections are strictly horizontal or vertical (dog-legs
+    for cross-level paths).
 
-    Column layout (x centres):
-      col_io   =  2.0   I/O pin labels
-      col_cpu  =  6.0   picorv32
-      col_bus  = 13.0   soc_bus
-      col_ram  = 20.5   soc_sram   (top half)
-      col_uart = 20.5   uart_top   (bottom half, inside container)
-
-    Row layout (y centres):
-      row_top  = 15.5   soc_top label strip
-      row_hi   = 11.5   soc_sram / upper
-      row_mid  =  7.5   main bus row
-      row_lo   =  4.0   uart group / lower
-      row_irq  =  1.5   IRQ return path
+    Vertical zones (y increases upward):
+      soc_sram   : y = 13.0 – 17.5   (top-right)
+      soc_bus    : y =  6.5 – 11.5   (centre)   ← 1.5 gap above sram, 1 gap below uart
+      uart_top   : y =  1.0 –  5.5   (bottom-right, top at 5.5 < bus bottom 6.5 ✓)
+      picorv32   : y =  3.5 – 14.5   (left column, spans both)
     """
-    W, H = 26, 18
-    fig, ax = plt.subplots(figsize=(22, 15), facecolor=BG)
+    W, H = 29, 20
+    fig, ax = plt.subplots(figsize=(24, 16), facecolor=BG)
     ax.set_facecolor(BG)
     ax.set_xlim(0, W); ax.set_ylim(0, H)
     ax.axis("off")
 
     # ── soc_top outer frame ───────────────────────────────────────────────────
-    _filled_box(ax, 0.4, 0.4, W-0.8, H-2.2, COL["top"], zo=1)
-    _label(ax, W/2, H-0.9, "soc_top", fs=16, color=COL["top"])
-    _sublabel(ax, W/2, H-1.6,
+    _filled_box(ax, 0.3, 0.3, W-0.6, H-1.5, COL["top"], zo=1)
+    _label(ax, W/2, H-0.65, "soc_top", fs=16, color=COL["top"])
+    _sublabel(ax, W/2, H-1.4,
               "reset synchroniser (2-FF)  ·  IRQ routing  ·  180 cells  ·  14 DFFs",
               fs=10.5)
 
     # ── picorv32 ──────────────────────────────────────────────────────────────
-    CPU_X, CPU_Y, CPU_W, CPU_H = 3.5, 3.8, 5.0, 8.0   # bottom-left
+    CPU_X, CPU_Y, CPU_W, CPU_H = 1.5, 3.5, 6.0, 11.0   # x=1.5–7.5, y=3.5–14.5
     _filled_box(ax, CPU_X, CPU_Y, CPU_W, CPU_H, COL["cpu"])
-    _label(ax, CPU_X+CPU_W/2, CPU_Y+CPU_H/2+1.0,  "picorv32",         fs=14, color=COL["cpu"])
-    _sublabel(ax, CPU_X+CPU_W/2, CPU_Y+CPU_H/2+0.15, "RV32I CPU",          fs=11)
-    _sublabel(ax, CPU_X+CPU_W/2, CPU_Y+CPU_H/2-0.65, "14,100 cells",       fs=11)
-    _sublabel(ax, CPU_X+CPU_W/2, CPU_Y+CPU_H/2-1.35, "1,520 DFFs",         fs=10.5)
-    _sublabel(ax, CPU_X+CPU_W/2, CPU_Y+CPU_H/2-2.0,  "ENABLE_IRQ=1",       fs=10)
-    _sublabel(ax, CPU_X+CPU_W/2, CPU_Y+CPU_H/2-2.6,  "BARREL_SHIFTER=1",   fs=10)
+    cx = CPU_X + CPU_W / 2
+    _label(ax,    cx, CPU_Y+CPU_H-1.0,   "picorv32",          fs=15, color=COL["cpu"])
+    _sublabel(ax, cx, CPU_Y+CPU_H-2.1,   "RV32I CPU",         fs=12)
+    _sublabel(ax, cx, CPU_Y+CPU_H-3.1,   "14,100 cells",      fs=11)
+    _sublabel(ax, cx, CPU_Y+CPU_H-4.1,   "1,520 DFFs",        fs=11)
+    _sublabel(ax, cx, CPU_Y+CPU_H-5.3,   "ENABLE_IRQ = 1",    fs=10)
+    _sublabel(ax, cx, CPU_Y+CPU_H-6.3,   "BARREL_SHIFTER = 1",fs=10)
+    _sublabel(ax, cx, CPU_Y+CPU_H-7.3,   "no MUL / DIV",      fs=10)
+    _sublabel(ax, cx, CPU_Y+CPU_H-8.3,   "50 MHz",            fs=10)
+
+    # I/O labels anchored to left edge of picorv32
+    ax.text(0.2, CPU_Y+CPU_H-0.7,  "→ clk",   ha="left", va="center",
+            fontsize=11, fontweight="bold", color="#58A6FF", zorder=8,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
+    ax.text(0.2, CPU_Y+CPU_H-1.8,  "→ rst_n", ha="left", va="center",
+            fontsize=11, fontweight="bold", color="#58A6FF", zorder=8,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
 
     # ── soc_bus ───────────────────────────────────────────────────────────────
-    BUS_X, BUS_Y, BUS_W, BUS_H = 11.5, 5.8, 3.5, 3.8
+    BUS_X, BUS_Y, BUS_W, BUS_H = 10.5, 6.5, 4.0, 5.0   # x=10.5–14.5, y=6.5–11.5
     _filled_box(ax, BUS_X, BUS_Y, BUS_W, BUS_H, COL["bus"])
-    _label(ax, BUS_X+BUS_W/2, BUS_Y+BUS_H/2+0.7,  "soc_bus",           fs=14, color=COL["bus"])
-    _sublabel(ax, BUS_X+BUS_W/2, BUS_Y+BUS_H/2-0.1, "Address decode",      fs=11)
-    _sublabel(ax, BUS_X+BUS_W/2, BUS_Y+BUS_H/2-0.8, "1,250 cells  ·  50 DFFs", fs=10)
-    _sublabel(ax, BUS_X+BUS_W/2, BUS_Y+BUS_H/2-1.5, "0x0000  SRAM", fs=9.5)
-    _sublabel(ax, BUS_X+BUS_W/2, BUS_Y+BUS_H/2-2.0, "0x2000_0000  UART",   fs=9.5)
+    bx = BUS_X + BUS_W / 2
+    _label(ax,    bx, BUS_Y+BUS_H-0.9,   "soc_bus",               fs=14, color=COL["bus"])
+    _sublabel(ax, bx, BUS_Y+BUS_H-2.0,   "Address decode",         fs=11)
+    _sublabel(ax, bx, BUS_Y+BUS_H-3.0,   "1,250 cells  ·  50 DFFs",fs=10)
+    _sublabel(ax, bx, BUS_Y+BUS_H-3.9,   "0x0000_xxxx  → SRAM",    fs=9.5)
+    _sublabel(ax, bx, BUS_Y+BUS_H-4.6,   "0x2000_xxxx  → UART",    fs=9.5)
 
     # ── soc_sram ──────────────────────────────────────────────────────────────
-    RAM_X, RAM_Y, RAM_W, RAM_H = 17.5, 10.5, 7.5, 4.5
+    RAM_X, RAM_Y, RAM_W, RAM_H = 17.5, 13.0, 10.5, 4.5   # y=13.0–17.5
     _filled_box(ax, RAM_X, RAM_Y, RAM_W, RAM_H, COL["sram"])
-    _label(ax, RAM_X+RAM_W/2, RAM_Y+RAM_H/2+0.9,  "soc_sram",           fs=14, color=COL["sram"])
-    _sublabel(ax, RAM_X+RAM_W/2, RAM_Y+RAM_H/2+0.1, "1 KB SRAM  (256 × 32-bit)", fs=11)
-    _sublabel(ax, RAM_X+RAM_W/2, RAM_Y+RAM_H/2-0.7, "8,800 cells  ·  8,192 DFFs", fs=11)
-    _sublabel(ax, RAM_X+RAM_W/2, RAM_Y+RAM_H/2-1.5, "0x0000–0x03FF",      fs=10)
+    rx = RAM_X + RAM_W / 2
+    _label(ax,    rx, RAM_Y+RAM_H-0.9,   "soc_sram",                  fs=14, color=COL["sram"])
+    _sublabel(ax, rx, RAM_Y+RAM_H-1.9,   "1 KB SRAM  (256 × 32-bit)", fs=11)
+    _sublabel(ax, rx, RAM_Y+RAM_H-2.9,   "8,800 cells  ·  8,192 DFFs",fs=11)
+    _sublabel(ax, rx, RAM_Y+RAM_H-3.8,   "0x0000 – 0x03FF",           fs=10)
 
     # ── uart_top container ────────────────────────────────────────────────────
-    UC_X, UC_Y, UC_W, UC_H = 17.0, 1.5, 8.5, 8.0
+    UC_X, UC_Y, UC_W, UC_H = 17.0, 1.0, 11.0, 4.5   # y=1.0–5.5  (top < bus bottom ✓)
     _filled_box(ax, UC_X, UC_Y, UC_W, UC_H, COL["uart"])
-    _label(ax, UC_X+UC_W/2, UC_Y+UC_H-0.55, "uart_top",          fs=13, color=COL["uart"])
-    _sublabel(ax, UC_X+UC_W/2, UC_Y+UC_H-1.2, "487 cells  ·  300 DFFs", fs=10)
+    _label(ax, UC_X+UC_W/2, UC_Y+UC_H-0.55, "uart_top",
+           fs=13, color=COL["uart"])
+    _sublabel(ax, UC_X+UC_W/2, UC_Y+UC_H-1.25,
+              "3,600 cells  ·  300 DFFs", fs=10)
 
-    # uart_tx (inside uart_top, left sub-block)
-    UTX_X, UTX_Y, UTX_W, UTX_H = UC_X+0.4, UC_Y+0.4, 3.5, 5.2
+    # uart_tx sub-block (left half of uart_top)
+    UTX_X, UTX_Y, UTX_W, UTX_H = UC_X+0.4, UC_Y+0.3, 4.5, 2.7
     _filled_box(ax, UTX_X, UTX_Y, UTX_W, UTX_H, COL["tx"], zo=4)
-    _label(ax, UTX_X+UTX_W/2, UTX_Y+UTX_H/2+0.7,  "uart_tx",   fs=12, color=COL["tx"])
-    _sublabel(ax, UTX_X+UTX_W/2, UTX_Y+UTX_H/2-0.05, "TX FSM",     fs=10.5)
-    _sublabel(ax, UTX_X+UTX_W/2, UTX_Y+UTX_H/2-0.75, "baud_cnt",  fs=10)
-    _sublabel(ax, UTX_X+UTX_W/2, UTX_Y+UTX_H/2-1.4,  "shift_reg", fs=10)
+    _label(ax,    UTX_X+UTX_W/2, UTX_Y+UTX_H-0.75, "uart_tx",
+           fs=12, color=COL["tx"])
+    _sublabel(ax, UTX_X+UTX_W/2, UTX_Y+UTX_H-1.65,
+              "TX FSM  ·  shift_reg  ·  baud_cnt", fs=9.5)
 
-    # uart_rx (inside uart_top, right sub-block)
-    URX_X, URX_Y, URX_W, URX_H = UC_X+4.2, UC_Y+0.4, 3.9, 5.2
+    # uart_rx sub-block (right half of uart_top)
+    URX_X, URX_Y, URX_W, URX_H = UC_X+5.7, UC_Y+0.3, 4.8, 2.7
     _filled_box(ax, URX_X, URX_Y, URX_W, URX_H, COL["rx"], zo=4)
-    _label(ax, URX_X+URX_W/2, URX_Y+URX_H/2+0.85, "uart_rx",   fs=12, color=COL["rx"])
-    _sublabel(ax, URX_X+URX_W/2, URX_Y+URX_H/2+0.1, "RX FSM",     fs=10.5)
-    _sublabel(ax, URX_X+URX_W/2, URX_Y+URX_H/2-0.6, "2-FF sync",  fs=10)
-    _sublabel(ax, URX_X+URX_W/2, URX_Y+URX_H/2-1.3, "sync_fifo",  fs=10)
-    _sublabel(ax, URX_X+URX_W/2, URX_Y+URX_H/2-1.9, "[8-deep RX]",fs=9.5)
+    _label(ax,    URX_X+URX_W/2, URX_Y+URX_H-0.75, "uart_rx",
+           fs=12, color=COL["rx"])
+    _sublabel(ax, URX_X+URX_W/2, URX_Y+URX_H-1.65,
+              "RX FSM  ·  2-FF sync  ·  sync_fifo", fs=9.5)
 
-    # ── I/O pin labels (far left) ─────────────────────────────────────────────
-    IO_X = 0.5
-    io_pins = [
-        (IO_X, CPU_Y+CPU_H-0.6, "clk",     "→", "#58A6FF"),
-        (IO_X, CPU_Y+CPU_H-1.4, "rst_n",   "→", "#58A6FF"),
-        (IO_X, CPU_Y+1.8,       "uart_rx", "→", COL["rx"]),
-        (IO_X, CPU_Y+0.8,       "uart_tx", "←", COL["tx"]),
-        (IO_X, CPU_Y+0.0,       "irq_out", "←", "#F85149"),
-    ]
-    for px, py, name, sym, c in io_pins:
-        ax.text(px, py, f"{sym} {name}", ha="left", va="center",
-                fontsize=11.5, fontweight="bold", color=c, zorder=8,
-                path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
+    # uart_tx → TX pin  (horizontal, right edge)
+    PIN_X = W - 0.3
+    TX_Y  = UTX_Y + UTX_H / 2
+    _hline(ax, UTX_X+UTX_W, PIN_X-1.5, TX_Y, COL["tx"], lw=1.8)
+    _arrow_right(ax, PIN_X-1.8, PIN_X-0.5, TX_Y, COL["tx"], lw=1.8)
+    ax.text(PIN_X, TX_Y, "uart_tx →", ha="right", va="center",
+            fontsize=11, fontweight="bold", color=COL["tx"], zorder=8,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
 
-    # ── Connections  (all strictly horizontal or vertical) ────────────────────
-    BUS_MID_Y = BUS_Y + BUS_H/2   # 7.7
+    # RX pin → uart_rx  (horizontal, right edge)
+    RX_Y = URX_Y + URX_H / 2
+    _hline(ax, URX_X+URX_W, PIN_X-1.5, RX_Y, COL["rx"], lw=1.8)
+    _arrow_left(ax, URX_X+URX_W, PIN_X-0.5, RX_Y, COL["rx"], lw=1.8)
+    ax.text(PIN_X, RX_Y, "← uart_rx", ha="right", va="center",
+            fontsize=11, fontweight="bold", color=COL["rx"], zorder=8,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
 
-    # CPU right → soc_bus left  (two-way: upper=req, lower=resp)
-    CPU_RIGHT = CPU_X + CPU_W     # 8.5
-    BUS_LEFT  = BUS_X             # 11.5
-    # request arrow (CPU → bus)
-    _arrow_right(ax, CPU_RIGHT, BUS_LEFT, BUS_MID_Y+0.25, COL["cpu"], lw=2.5)
-    # response arrow (bus → CPU)
-    _arrow_left(ax,  CPU_RIGHT, BUS_LEFT, BUS_MID_Y-0.25, COL["bus"], lw=2.5)
-    # bus label above the pair
-    _bus_label(ax, (CPU_RIGHT+BUS_LEFT)/2, BUS_MID_Y+1.0,
-               "32-bit memory bus\nmem_valid · ready · addr[31:0]\nwdata[31:0] · rdata[31:0] · wstrb[3:0]",
+    # ── Connections (all horizontal + vertical, no diagonals) ─────────────────
+
+    # CPU ↔ soc_bus : two parallel horizontal arrows
+    CPU_RIGHT = CPU_X + CPU_W    # x=7.5
+    BUS_LEFT  = BUS_X            # x=10.5
+    BUS_MID_Y = BUS_Y + BUS_H/2 # y=9.0
+    _arrow_right(ax, CPU_RIGHT, BUS_LEFT, BUS_MID_Y+0.35, COL["cpu"], lw=2.5)
+    _arrow_left( ax, CPU_RIGHT, BUS_LEFT, BUS_MID_Y-0.35, COL["bus"], lw=2.5)
+    _bus_label(ax, (CPU_RIGHT+BUS_LEFT)/2, BUS_MID_Y+1.4,
+               "32-bit memory bus\n"
+               "mem_valid · ready · addr[31:0]\n"
+               "wdata[31:0]  ·  rdata[31:0]  ·  wstrb[3:0]",
                COL["cpu"], fs=9.5)
 
-    # soc_bus top → soc_sram bottom  (vertical, then horizontal dog-leg)
-    RAM_BOT_Y  = RAM_Y                    # 10.5
-    RAM_CTR_X  = RAM_X + RAM_W/2          # 21.25
-    BUS_TOP_Y  = BUS_Y + BUS_H            # 9.6
-    BUS_CTR_X  = BUS_X + BUS_W/2         # 13.25
-    # vertical segment from bus top up to SRAM row
+    # soc_bus → soc_sram : up from bus top, then right to sram left
+    #   bus top  = y=11.5,  sram bottom = y=13.0  → 1.5 unit clear gap ✓
+    BUS_CTR_X = BUS_X + BUS_W/2  # x=12.5
+    BUS_TOP_Y = BUS_Y + BUS_H    # y=11.5
+    RAM_BOT_Y = RAM_Y            # y=13.0
     _vline(ax, BUS_CTR_X, BUS_TOP_Y, RAM_BOT_Y, COL["sram"], lw=2.2)
-    # horizontal segment across to SRAM centre
-    _hline(ax, BUS_CTR_X, RAM_CTR_X, RAM_BOT_Y, COL["sram"], lw=2.2)
-    _arrow_up(ax, RAM_CTR_X, RAM_BOT_Y-0.05, RAM_BOT_Y+0.1, COL["sram"], lw=2.2)
-    _bus_label(ax, (BUS_CTR_X+RAM_CTR_X)/2, RAM_BOT_Y-0.55,
-               "cs · we · wstrb[3:0] · addr[7:0] · wdata/rdata[31:0]",
+    _hline(ax, BUS_CTR_X, RAM_X,     RAM_BOT_Y, COL["sram"], lw=2.2)
+    _arrow_right(ax, RAM_X-0.3, RAM_X+0.3, RAM_BOT_Y, COL["sram"], lw=2.2)
+    # label sits in the clear gap between bus top and sram bottom
+    _bus_label(ax, (BUS_CTR_X + RAM_X)/2, RAM_BOT_Y + 0.6,
+               "cs · we · wstrb[3:0] · addr[7:0] · wdata / rdata[31:0]",
                COL["sram"], fs=9.5)
 
-    # soc_bus bottom → uart_top top  (vertical down, then horizontal)
-    UART_TOP_Y = UC_Y + UC_H              # 9.5
-    UART_CTR_X = UC_X + UC_W/2           # 21.25
-    BUS_BOT_Y  = BUS_Y                   # 5.8
+    # soc_bus → uart_top : down from bus bottom, then right to uart top-centre
+    #   bus bottom = y=6.5,  uart top = y=5.5  → 1.0 unit clear gap ✓
+    BUS_BOT_Y  = BUS_Y           # y=6.5
+    UART_TOP_Y = UC_Y + UC_H     # y=5.5
+    UART_CTR_X = UC_X + UC_W/2  # x=22.5
     _vline(ax, BUS_CTR_X, BUS_BOT_Y, UART_TOP_Y, COL["uart"], lw=2.2)
     _hline(ax, BUS_CTR_X, UART_CTR_X, UART_TOP_Y, COL["uart"], lw=2.2)
-    _arrow_down(ax, UART_CTR_X, UART_TOP_Y+0.05, UART_TOP_Y-0.1, COL["uart"], lw=2.2)
-    _bus_label(ax, (BUS_CTR_X+UART_CTR_X)/2, UART_TOP_Y+0.55,
-               "addr[2:0] · wdata/rdata[7:0] · wen · ren",
+    _arrow_down(ax, UART_CTR_X, UART_TOP_Y+0.2, UART_TOP_Y-0.1, COL["uart"], lw=2.2)
+    # label sits in the gap between bus bottom and uart top
+    _bus_label(ax, (BUS_CTR_X + UART_CTR_X)/2, (BUS_BOT_Y + UART_TOP_Y)/2,
+               "addr[2:0]  ·  wdata / rdata[7:0]  ·  wen  ·  ren",
                COL["uart"], fs=9.5)
 
-    # uart_tx → TX pin (right edge, horizontal)
-    TX_PIN_X = W - 0.3
-    TX_MID_Y = UTX_Y + UTX_H/2
-    _hline(ax, UTX_X+UTX_W, TX_PIN_X, TX_MID_Y, COL["tx"], lw=2.0)
-    _arrow_right(ax, TX_PIN_X-0.3, TX_PIN_X, TX_MID_Y, COL["tx"], lw=2.0)
-    _bus_label(ax, TX_PIN_X-0.8, TX_MID_Y+0.45, "uart_tx →", COL["tx"], fs=10)
-
-    # RX pin → uart_rx (right edge → entering right side of uart_rx)
-    RX_MID_Y = URX_Y + URX_H/2
-    _hline(ax, URX_X+URX_W, TX_PIN_X, RX_MID_Y, COL["rx"], lw=2.0)
-    _arrow_left(ax, URX_X+URX_W, TX_PIN_X, RX_MID_Y, COL["rx"], lw=2.0)
-    _bus_label(ax, TX_PIN_X-0.8, RX_MID_Y-0.45, "← uart_rx", COL["rx"], fs=10)
-
-    # uart_top → CPU  IRQ  (horizontal at bottom, below both blocks)
-    IRQ_Y = CPU_Y - 0.7
-    _hline(ax, CPU_X+CPU_W/2, UC_X, IRQ_Y, "#F85149", lw=2.0)
-    _vline(ax, UC_X, IRQ_Y, UC_Y+UC_H*0.3, "#F85149", lw=2.0)
-    _arrow_up(ax, CPU_X+CPU_W/2, IRQ_Y, CPU_Y, "#F85149", lw=2.0)
-    _bus_label(ax, (CPU_X+CPU_W/2+UC_X)/2, IRQ_Y-0.5,
+    # IRQ : uart_top bottom-left → below all blocks → up into cpu bottom
+    IRQ_Y = UC_Y - 0.45          # y=0.55  (below uart_top, above canvas floor)
+    _vline(ax, UC_X, UC_Y, IRQ_Y, "#F85149", lw=2.0)
+    _hline(ax, cx, UC_X, IRQ_Y, "#F85149", lw=2.0)
+    _arrow_up(ax, cx, IRQ_Y, CPU_Y, "#F85149", lw=2.0)
+    _bus_label(ax, (cx + UC_X)/2, IRQ_Y - 0.4,
                "irq  →  cpu_irq[0]", "#F85149", fs=10)
 
     ax.set_title(
@@ -306,218 +304,190 @@ def gen_soc_hierarchy():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2.  BLOCK DIAGRAM — cell counts + data-flow  (redesigned)
+# 2.  BLOCK DIAGRAM — three data paths + cell counts
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Real Yosys numbers (28,313 total; DFFs=10,076)
 BLOCKS = {
-    #  name          cells   DFFs    wires  color
-    "picorv32":  (14_100,  1_520, 11_200, COL["cpu"]),
-    "soc_sram":  ( 8_800,  8_192,  5_400, COL["sram"]),
-    "uart_top":  ( 3_600,    300,  2_100, COL["uart"]),
-    "soc_bus":   ( 1_250,     50,    900, COL["bus"]),
-    "soc_top":   (   180,     14,    120, COL["top"]),
+    #  name          cells   DFFs   color
+    "picorv32":  (14_100,  1_520, COL["cpu"]),
+    "soc_sram":  ( 8_800,  8_192, COL["sram"]),
+    "uart_top":  ( 3_600,    300, COL["uart"]),
+    "soc_bus":   ( 1_250,     50, COL["bus"]),
+    "soc_top":   (   180,     14, COL["top"]),
 }
 TOTAL_CELLS = sum(v[0] for v in BLOCKS.values())
-TOTAL_DFF   = sum(v[1] for v in BLOCKS.values())
 
 def gen_soc_block_diagram():
     """
-    Three-column layout, all connections horizontal or vertical.
+    Data-flow block diagram.  Shows the three end-to-end data paths through
+    the SoC, with boxes sized proportional to cell count.
 
-    Col A (left):   picorv32
-    Col B (centre): soc_bus  (thin vertical bridge)
-    Col C (right):  soc_sram (top) + uart_top (bottom)
+      Path ①  Instruction fetch  : picorv32 ↔ soc_bus ↔ soc_sram
+      Path ②  UART transmit      : picorv32 → soc_bus → uart_top → TX pin
+      Path ③  Interrupt (IRQ)    : RX pin → uart_top → picorv32
 
-    Box widths/heights scale with sqrt(cells) so area ∝ cells.
-    soc_top sits as a small badge at the top-centre.
+    Layout: single left-to-right row with right column split top/bottom.
+      Col A x=5.0  picorv32  (left, full height)
+      Col B x=12.5 soc_bus   (centre bridge, vertically centred)
+      Col C x=20.0 soc_sram  (top-right) + uart_top (bottom-right)
+                              with a clear vertical gap between them
     """
-    W, H = 24, 16
-    fig, ax = plt.subplots(figsize=(22, 14), facecolor=BG)
+    W, H = 26, 18
+    fig, ax = plt.subplots(figsize=(24, 15), facecolor=BG)
     ax.set_facecolor(BG)
     ax.set_xlim(0, W); ax.set_ylim(0, H)
     ax.axis("off")
 
-    # ── Column x-centres ─────────────────────────────────────────────────────
-    COL_A  =  5.0   # picorv32 centre-x
-    COL_B  = 11.5   # soc_bus  centre-x
-    COL_C  = 19.5   # SRAM / uart_top centre-x
+    # ── Box geometry (all coordinates bottom-left) ────────────────────────────
+    # picorv32: largest — occupies full left column
+    CPU_X, CPU_Y, CPU_W, CPU_H = 1.5, 3.0, 7.0, 11.5
 
-    # ── Row y-centres ─────────────────────────────────────────────────────────
-    ROW_TOP = 11.5   # soc_sram
-    ROW_MID =  8.0   # soc_bus / picorv32 mid
-    ROW_BOT =  3.8   # uart_top
+    # soc_bus: narrow vertical bridge, centred on cpu
+    BUS_W, BUS_H = 3.5, 7.5
+    BUS_X = 10.75
+    BUS_Y = CPU_Y + (CPU_H - BUS_H) / 2   # vertically centred with CPU = 5.5
 
-    # ── Box sizes (all manually tuned, area ∝ cells) ─────────────────────────
-    # picorv32: 14,100 cells → tallest, widest left block
-    CPU_W, CPU_H = 7.0, 9.5
-    # soc_sram: 8,800 cells → large right-top block
-    RAM_W, RAM_H = 7.0, 5.5
-    # uart_top: 3,600 cells → medium right-bottom block
-    UART_W, UART_H = 7.0, 4.5
-    # soc_bus: 1,250 cells → narrow centre column
-    BUS_W, BUS_H = 3.5, 6.0
-    # soc_top: 180 cells → small badge
-    TOP_W, TOP_H = 4.0, 1.4
+    # soc_sram: top-right block
+    # Area ∝ cells: 8800/14100 ≈ 62 % of cpu → height 62 % of cpu_h ≈ 7.1, cap at 6.5
+    RAM_X, RAM_Y, RAM_W, RAM_H = 16.5, 10.5, 8.5, 6.0   # y=10.5–16.5
 
-    # Derive bottom-left corners from centres
-    def bl(cx, cy, w, h):
-        return cx - w/2, cy - h/2
+    # uart_top: bottom-right block
+    # Area ∝ cells: 3600/14100 ≈ 25 % → height ≈ 4.5
+    UART_X, UART_Y, UART_W, UART_H = 16.5, 2.5, 8.5, 5.5   # y=2.5–8.0
 
-    CPU_X,  CPU_Y  = bl(COL_A, ROW_MID, CPU_W,  CPU_H)
-    RAM_X,  RAM_Y  = bl(COL_C, ROW_TOP, RAM_W,  RAM_H)
-    UART_X, UART_Y = bl(COL_C, ROW_BOT, UART_W, UART_H)
-    BUS_X,  BUS_Y  = bl(COL_B, ROW_MID, BUS_W,  BUS_H)
-    TOP_X,  TOP_Y  = bl(COL_B, 14.5,    TOP_W,  TOP_H)
+    # Gap between uart_top top (8.0) and sram bottom (10.5) = 2.5 units ✓
+    # soc_bus spans y=5.5–13.0; connects to sram (y=10.5) and uart (y=8.0)
+    # by straight horizontal arrows from bus right edge ✓
 
     # ── Draw boxes ────────────────────────────────────────────────────────────
     # picorv32
     _filled_box(ax, CPU_X, CPU_Y, CPU_W, CPU_H, COL["cpu"])
-    _label(ax,    COL_A, ROW_MID+2.8,   "picorv32",        fs=16, color=COL["cpu"])
-    _sublabel(ax, COL_A, ROW_MID+1.9,   "RV32I CPU",       fs=13)
-    _sublabel(ax, COL_A, ROW_MID+1.0,   "14,100 cells",    fs=12)
-    _sublabel(ax, COL_A, ROW_MID+0.2,   "1,520 DFFs",      fs=12)
-    _sublabel(ax, COL_A, ROW_MID-0.7,   "50 MHz",          fs=11)
-    _sublabel(ax, COL_A, ROW_MID-1.4,   "ENABLE_IRQ = 1",  fs=11)
-    _sublabel(ax, COL_A, ROW_MID-2.1,   "no MUL / DIV",    fs=11)
+    cx = CPU_X + CPU_W/2
+    _label(ax,    cx, CPU_Y+CPU_H-1.0,  "picorv32",       fs=16, color=COL["cpu"])
+    _sublabel(ax, cx, CPU_Y+CPU_H-2.1,  "RV32I CPU",      fs=13)
+    _sublabel(ax, cx, CPU_Y+CPU_H-3.2,  "14,100 cells",   fs=12)
+    _sublabel(ax, cx, CPU_Y+CPU_H-4.2,  "50 % of design", fs=11)
+    _sublabel(ax, cx, CPU_Y+CPU_H-5.2,  "1,520 DFFs",     fs=11)
+    _sublabel(ax, cx, CPU_Y+CPU_H-6.5,  "50 MHz",         fs=11)
+    _sublabel(ax, cx, CPU_Y+CPU_H-7.5,  "ENABLE_IRQ = 1", fs=10)
+    _sublabel(ax, cx, CPU_Y+CPU_H-8.5,  "no MUL / DIV",   fs=10)
 
-    # soc_sram
-    _filled_box(ax, RAM_X, RAM_Y, RAM_W, RAM_H, COL["sram"])
-    _label(ax,    COL_C, ROW_TOP+0.9,   "soc_sram",                   fs=15, color=COL["sram"])
-    _sublabel(ax, COL_C, ROW_TOP+0.0,   "1 KB SRAM  (256 × 32-bit)",  fs=12)
-    _sublabel(ax, COL_C, ROW_TOP-0.8,   "8,800 cells  ·  8,192 DFFs", fs=12)
-    _sublabel(ax, COL_C, ROW_TOP-1.6,   "0x0000 – 0x03FF",            fs=11)
-
-    # uart_top
-    _filled_box(ax, UART_X, UART_Y, UART_W, UART_H, COL["uart"])
-    _label(ax,    COL_C, ROW_BOT+0.8,   "uart_top",                   fs=15, color=COL["uart"])
-    _sublabel(ax, COL_C, ROW_BOT-0.05,  "UART  (TX + RX + FIFOs)",    fs=12)
-    _sublabel(ax, COL_C, ROW_BOT-0.85,  "3,600 cells  ·  300 DFFs",   fs=12)
-    _sublabel(ax, COL_C, ROW_BOT-1.6,   "0x2000_0000 – 0x2000_000F",  fs=11)
+    # I/O pins left of CPU
+    ax.text(0.15, CPU_Y+CPU_H-0.8,  "→ clk",   ha="left", va="center",
+            fontsize=11, fontweight="bold", color="#58A6FF", zorder=8,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
+    ax.text(0.15, CPU_Y+CPU_H-1.9,  "→ rst_n", ha="left", va="center",
+            fontsize=11, fontweight="bold", color="#58A6FF", zorder=8,
+            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
 
     # soc_bus
     _filled_box(ax, BUS_X, BUS_Y, BUS_W, BUS_H, COL["bus"])
-    _label(ax,    COL_B, ROW_MID+1.1,   "soc_bus",         fs=14, color=COL["bus"])
-    _sublabel(ax, COL_B, ROW_MID+0.3,   "Addr decode",     fs=12)
-    _sublabel(ax, COL_B, ROW_MID-0.4,   "1,250 cells",     fs=12)
-    _sublabel(ax, COL_B, ROW_MID-1.1,   "50 DFFs",         fs=11)
+    bx = BUS_X + BUS_W/2
+    _label(ax,    bx, BUS_Y+BUS_H-1.0,  "soc_bus",        fs=14, color=COL["bus"])
+    _sublabel(ax, bx, BUS_Y+BUS_H-2.0,  "Addr decode",    fs=12)
+    _sublabel(ax, bx, BUS_Y+BUS_H-3.0,  "1,250 cells",    fs=11)
+    _sublabel(ax, bx, BUS_Y+BUS_H-4.0,  "4 % of design",  fs=11)
+    _sublabel(ax, bx, BUS_Y+BUS_H-5.0,  "50 DFFs",        fs=10)
 
-    # soc_top badge
-    _filled_box(ax, TOP_X, TOP_Y, TOP_W, TOP_H, COL["top"])
-    _label(ax,    COL_B, TOP_Y+TOP_H/2+0.05, "soc_top",   fs=12, color=COL["top"])
-    _sublabel(ax, COL_B, TOP_Y+TOP_H/2-0.5,  "180 cells · 14 DFFs · rst_n_sync · IRQ", fs=9)
+    # soc_sram
+    _filled_box(ax, RAM_X, RAM_Y, RAM_W, RAM_H, COL["sram"])
+    rx = RAM_X + RAM_W/2
+    _label(ax,    rx, RAM_Y+RAM_H-0.9,  "soc_sram",                  fs=15, color=COL["sram"])
+    _sublabel(ax, rx, RAM_Y+RAM_H-1.9,  "1 KB SRAM  (256 × 32-bit)", fs=12)
+    _sublabel(ax, rx, RAM_Y+RAM_H-2.9,  "8,800 cells  ·  31 %",      fs=11)
+    _sublabel(ax, rx, RAM_Y+RAM_H-3.9,  "8,192 DFFs  (81 % of all)", fs=11)
+    _sublabel(ax, rx, RAM_Y+RAM_H-4.9,  "0x0000 – 0x03FF",           fs=10)
 
-    # ── Cell-count bar (right margin) ─────────────────────────────────────────
-    BAR_X = W - 1.0
-    bar_data = [
-        ("picorv32",  14100, COL["cpu"],  ROW_MID),
-        ("soc_sram",   8800, COL["sram"], ROW_TOP),
-        ("uart_top",   3600, COL["uart"], ROW_BOT),
-        ("soc_bus",    1250, COL["bus"],  ROW_MID),
-    ]
-    max_cells = 14100
-    BAR_MAX_H = 3.0
-    for i, (name, cells, color, cy) in enumerate(bar_data):
-        bh = max(BAR_MAX_H * cells / max_cells, 0.25)
-        bx = BAR_X + i * 0.0  # stacked below each other
-        by = cy - bh/2
-        # small horizontal tick
-        pct = cells / TOTAL_CELLS * 100
-        ax.text(BAR_X+0.1, cy, f"{pct:.0f} %",
-                ha="left", va="center", fontsize=10,
-                color=color, fontweight="bold", zorder=8,
-                path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
+    # uart_top
+    _filled_box(ax, UART_X, UART_Y, UART_W, UART_H, COL["uart"])
+    ux = UART_X + UART_W/2
+    _label(ax,    ux, UART_Y+UART_H-0.9,  "uart_top",                  fs=15, color=COL["uart"])
+    _sublabel(ax, ux, UART_Y+UART_H-1.9,  "UART  (TX + RX + FIFOs)",   fs=12)
+    _sublabel(ax, ux, UART_Y+UART_H-2.9,  "3,600 cells  ·  13 %",      fs=11)
+    _sublabel(ax, ux, UART_Y+UART_H-3.9,  "300 DFFs",                  fs=11)
+    _sublabel(ax, ux, UART_Y+UART_H-4.9,  "0x2000_0000 – 0x2000_000F", fs=10)
 
-    # ── Connections (all horizontal / vertical) ───────────────────────────────
-    BUS_RIGHT = BUS_X + BUS_W    # 13.25
-    BUS_LEFT  = BUS_X            # 9.75
-    BUS_TOP   = BUS_Y + BUS_H    # 11.0
-    BUS_BOT   = BUS_Y            # 5.0
-    CPU_RIGHT = CPU_X + CPU_W    # 8.5
-
-    # CPU → soc_bus (request, upper lane)
-    REQ_Y = ROW_MID + 0.3
-    _hline(ax, CPU_RIGHT, BUS_LEFT, REQ_Y, COL["cpu"], lw=2.8)
-    _arrow_right(ax, BUS_LEFT-0.3, BUS_LEFT+0.05, REQ_Y, COL["cpu"], lw=2.8)
-
-    # soc_bus → CPU (response, lower lane)
-    RSP_Y = ROW_MID - 0.3
-    _hline(ax, CPU_RIGHT, BUS_LEFT, RSP_Y, COL["bus"], lw=2.8)
-    _arrow_left(ax, CPU_RIGHT-0.05, BUS_LEFT, RSP_Y, COL["bus"], lw=2.8)
-
-    # Bus label between the two arrows
-    _bus_label(ax, (CPU_RIGHT+BUS_LEFT)/2, ROW_MID+1.2,
-               "32-bit memory bus\n"
-               "mem_valid  ·  mem_ready  ·  mem_addr[31:0]\n"
-               "mem_wdata[31:0]  ·  mem_rdata[31:0]  ·  mem_wstrb[3:0]",
-               COL["cpu"], fs=10)
-
-    # soc_bus top → soc_sram (vertical up, then right)
-    VTOP_X = COL_B + 0.4   # offset from bus centre to avoid overlap
-    VTOP_STOP = RAM_Y       # bottom of SRAM
-    _vline(ax, VTOP_X, BUS_TOP, VTOP_STOP, COL["sram"], lw=2.4)
-    _hline(ax, VTOP_X, RAM_X, VTOP_STOP, COL["sram"], lw=2.4)
-    _arrow_right(ax, RAM_X-0.3, RAM_X+0.1, VTOP_STOP, COL["sram"], lw=2.4)
-    _bus_label(ax, (VTOP_X + RAM_X)/2, VTOP_STOP - 0.6,
-               "cs · we · wstrb[3:0] · addr[7:0] · wdata / rdata[31:0]",
-               COL["sram"], fs=10)
-
-    # soc_bus bottom → uart_top (vertical down, then right)
-    VBOT_X = COL_B - 0.4   # offset other side
-    UART_TOP_Y = UART_Y + UART_H
-    _vline(ax, VBOT_X, BUS_BOT, UART_TOP_Y, COL["uart"], lw=2.4)
-    _hline(ax, VBOT_X, UART_X, UART_TOP_Y, COL["uart"], lw=2.4)
-    _arrow_right(ax, UART_X-0.3, UART_X+0.1, UART_TOP_Y, COL["uart"], lw=2.4)
-    _bus_label(ax, (VBOT_X + UART_X)/2, UART_TOP_Y + 0.5,
-               "addr[2:0]  ·  wdata/rdata[7:0]  ·  wen  ·  ren",
-               COL["uart"], fs=10)
-
-    # uart_top → CPU  IRQ  (horizontal at bottom)
-    IRQ_Y = CPU_Y - 0.6
-    _hline(ax, CPU_X+CPU_W/2, UART_X, IRQ_Y, "#F85149", lw=2.2)
-    _vline(ax, UART_X, IRQ_Y, UART_Y+UART_H*0.25, "#F85149", lw=2.2)
-    _arrow_up(ax, CPU_X+CPU_W/2, IRQ_Y, CPU_Y, "#F85149", lw=2.2)
-    _bus_label(ax, (CPU_X+CPU_W/2+UART_X)/2, IRQ_Y-0.55,
-               "irq  →  cpu_irq[0]", "#F85149", fs=10)
-
-    # soc_top → all (dashed rst_n_sync lines from badge)
-    for tx, ty in [(COL_A, ROW_MID+CPU_H/2),
-                   (COL_B, BUS_Y+BUS_H),
-                   (COL_C, RAM_Y+RAM_H),
-                   (COL_C, UART_Y+UART_H)]:
-        ax.plot([COL_B, tx], [TOP_Y, ty],
-                color=COL["top"], lw=1.0, ls=(0, (4, 3)),
-                alpha=0.55, zorder=3)
-
-    # ── I/O pins ──────────────────────────────────────────────────────────────
-    ax.text(0.3, ROW_MID+1.5, "→ clk",     ha="left", va="center",
-            fontsize=11, color="#58A6FF", fontweight="bold", zorder=8,
+    # uart_tx / uart_rx pin labels at right edge
+    ax.text(W-0.2, UART_Y+UART_H*0.72, "uart_tx →",
+            ha="right", va="center", fontsize=11, fontweight="bold",
+            color=COL["tx"], zorder=8,
             path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
-    ax.text(0.3, ROW_MID+0.7, "→ rst_n",   ha="left", va="center",
-            fontsize=11, color="#58A6FF", fontweight="bold", zorder=8,
+    ax.text(W-0.2, UART_Y+UART_H*0.38, "← uart_rx",
+            ha="right", va="center", fontsize=11, fontweight="bold",
+            color=COL["rx"], zorder=8,
             path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
-    ax.text(W-0.3, (ROW_TOP+ROW_BOT)/2+0.8, "← uart_tx",
-            ha="right", va="center", fontsize=11, color=COL["tx"],
-            fontweight="bold", zorder=8,
-            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
-    ax.text(W-0.3, (ROW_TOP+ROW_BOT)/2-0.0, "→ uart_rx",
-            ha="right", va="center", fontsize=11, color=COL["rx"],
-            fontweight="bold", zorder=8,
-            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
-    ax.text(W-0.3, (ROW_TOP+ROW_BOT)/2-0.8, "← irq_out",
-            ha="right", va="center", fontsize=11, color="#F85149",
-            fontweight="bold", zorder=8,
-            path_effects=[pe.withStroke(linewidth=2, foreground=BG)])
+
+    # ── Data path ①  Instruction fetch ────────────────────────────────────────
+    #   picorv32 ↔ soc_bus  (two parallel arrows, upper region)
+    P1_Y_UP = BUS_Y + BUS_H*0.70    # request lane
+    P1_Y_DN = BUS_Y + BUS_H*0.58    # response lane
+    CPU_RIGHT = CPU_X + CPU_W        # x=8.5
+    BUS_LEFT  = BUS_X                # x=10.75
+    _arrow_right(ax, CPU_RIGHT, BUS_LEFT, P1_Y_UP, COL["cpu"],  lw=2.6)
+    _arrow_left( ax, CPU_RIGHT, BUS_LEFT, P1_Y_DN, COL["sram"], lw=2.6)
+    _bus_label(ax, (CPU_RIGHT+BUS_LEFT)/2, P1_Y_UP+0.75,
+               "① mem_valid · mem_addr[31:0] · mem_wstrb",
+               COL["cpu"], fs=9.5)
+    _bus_label(ax, (CPU_RIGHT+BUS_LEFT)/2, P1_Y_DN-0.65,
+               "mem_ready · mem_rdata[31:0]",
+               COL["sram"], fs=9.5)
+
+    #   soc_bus ↔ soc_sram  (horizontal right from bus, at sram mid y)
+    SRAM_MID_Y = RAM_Y + RAM_H*0.40
+    BUS_RIGHT = BUS_X + BUS_W       # x=14.25
+    _arrow_right(ax, BUS_RIGHT, RAM_X, SRAM_MID_Y+0.25, COL["cpu"],  lw=2.6)
+    _arrow_left( ax, BUS_RIGHT, RAM_X, SRAM_MID_Y-0.25, COL["sram"], lw=2.6)
+    _bus_label(ax, (BUS_RIGHT+RAM_X)/2, SRAM_MID_Y+1.1,
+               "① addr[7:0]  ·  wdata[31:0]  ·  we  ·  wstrb[3:0]",
+               COL["cpu"], fs=9.5)
+    _bus_label(ax, (BUS_RIGHT+RAM_X)/2, SRAM_MID_Y-1.05,
+               "rdata[31:0]",
+               COL["sram"], fs=9.5)
+
+    # ── Data path ②  UART transmit ────────────────────────────────────────────
+    #   picorv32 → soc_bus  (lower region of the bus arrows)
+    P2_Y = BUS_Y + BUS_H*0.28
+    _arrow_right(ax, CPU_RIGHT, BUS_LEFT, P2_Y, COL["uart"], lw=2.4)
+    _bus_label(ax, (CPU_RIGHT+BUS_LEFT)/2, P2_Y+0.55,
+               "② SW → TX_DATA (0x2000_0000)",
+               COL["uart"], fs=9.5)
+
+    #   soc_bus → uart_top  (horizontal right from bus, at uart mid y)
+    UART_MID_Y = UART_Y + UART_H*0.62
+    _arrow_right(ax, BUS_RIGHT, UART_X, UART_MID_Y, COL["uart"], lw=2.4)
+    _bus_label(ax, (BUS_RIGHT+UART_X)/2, UART_MID_Y+0.55,
+               "② addr[2:0]  ·  wdata[7:0]  ·  wen",
+               COL["uart"], fs=9.5)
+
+    # ── Data path ③  Interrupt / IRQ ─────────────────────────────────────────
+    #   uart_top → picorv32  (below all blocks, return path)
+    IRQ_Y = CPU_Y - 0.55
+    UART_IRQ_X = UART_X + UART_W*0.25
+    _vline(ax, UART_IRQ_X, UART_Y, IRQ_Y, "#F85149", lw=2.2)
+    _hline(ax, cx, UART_IRQ_X, IRQ_Y, "#F85149", lw=2.2)
+    _arrow_up(ax, cx, IRQ_Y, CPU_Y, "#F85149", lw=2.2)
+    _bus_label(ax, (cx + UART_IRQ_X)/2, IRQ_Y - 0.45,
+               "③ irq[0]  —  level-sensitive, held until ISR reads RX_DATA",
+               "#F85149", fs=9.5)
+
+    #   uart_top → CPU (rx data read path label at uart left edge)
+    UART_RX_Y = UART_Y + UART_H*0.30
+    _arrow_left(ax, BUS_RIGHT, UART_X, UART_RX_Y, "#F85149", lw=2.0)
+    _bus_label(ax, (BUS_RIGHT+UART_X)/2, UART_RX_Y-0.55,
+               "③ ISR: LW RX_DATA → clears irq",
+               "#F85149", fs=9.5)
+    _arrow_left(ax, CPU_RIGHT, BUS_LEFT, BUS_Y+BUS_H*0.15, "#F85149", lw=2.0)
 
     # ── Title + legend ────────────────────────────────────────────────────────
     ax.set_title(
-        "rv32_soc  ·  Block Diagram  ·  sky130A  ·  "
+        "rv32_soc  ·  Data-Flow Block Diagram  ·  sky130A  ·  "
         "28,313 generic cells (Yosys 0.63)  ·  10,076 DFFs  ·  50 MHz",
         color=TEXT, fontsize=13, pad=10)
 
     legend_patches = [
-        mpatches.Patch(facecolor=BLOCKS[n][3], alpha=0.75,
-                       label=f"{n}   {BLOCKS[n][0]:,} cells  "
+        mpatches.Patch(facecolor=BLOCKS[n][2], alpha=0.80,
+                       label=f"{n}  —  {BLOCKS[n][0]:,} cells "
                              f"({BLOCKS[n][0]/TOTAL_CELLS*100:.0f} %)   "
                              f"{BLOCKS[n][1]:,} DFFs")
         for n in ["picorv32", "soc_sram", "uart_top", "soc_bus", "soc_top"]
