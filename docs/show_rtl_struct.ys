@@ -1,0 +1,24 @@
+# RTL-structural "show" — proc+opt only, no techmap
+# Gives a readable view of the register/FSM/datapath structure
+# without exploding to individual AND/OR/MUX gates
+
+# ── uart_tx (RTL structural) ──────────────────────────────────────────────────
+read_verilog -sv ../rtl/uart_tx.v
+hierarchy -check -top uart_tx
+proc; opt_clean
+show -format dot -prefix ../docs/images/struct_uart_tx uart_tx
+delete
+
+# ── uart_rx (RTL structural) ──────────────────────────────────────────────────
+read_verilog -sv ../rtl/uart_rx.v
+hierarchy -check -top uart_rx
+proc; opt_clean
+show -format dot -prefix ../docs/images/struct_uart_rx uart_rx
+delete
+
+# ── sync_fifo (RTL structural — keep memory visible) ─────────────────────────
+read_verilog -sv ../rtl/sync_fifo.v
+hierarchy -check -top sync_fifo
+proc; opt_clean
+show -format dot -prefix ../docs/images/struct_sync_fifo sync_fifo
+delete

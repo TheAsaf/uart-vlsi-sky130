@@ -21,3 +21,6 @@ venv/
 
 # Development/debug scripts (not part of published project)
 docs/_audit_vcd.py
+
+# Yosys intermediate dot files (regenerable via show_modules.ys / show_rtl_struct.ys)
+docs/images/*.dot

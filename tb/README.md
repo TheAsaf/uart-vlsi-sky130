@@ -2,6 +2,9 @@
 
 This directory contains two self-checking testbenches and a Makefile that runs them.
 
+**All 10 tests pass** (6 UART unit + 4 SoC system).  
+→ See [`docs/physical_structure.md`](../docs/physical_structure.md) for the synthesised gate-level structure that these testbenches verify.
+
 ## Quick Start
 
 ```bash

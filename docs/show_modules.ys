@@ -1,0 +1,38 @@
+# Yosys "show" script — generate gate-level dot/PNG for each submodule
+# Usage: yosys show_modules.ys
+# Requires graphviz (dot) on PATH
+
+# ── uart_tx ──────────────────────────────────────────────────────────────────
+read_verilog -sv ../rtl/uart_tx.v
+hierarchy -check -top uart_tx
+proc; opt; memory; techmap; opt
+show -format dot -prefix ../docs/images/gate_uart_tx uart_tx
+delete
+
+# ── uart_rx ──────────────────────────────────────────────────────────────────
+read_verilog -sv ../rtl/uart_rx.v
+hierarchy -check -top uart_rx
+proc; opt; memory; techmap; opt
+show -format dot -prefix ../docs/images/gate_uart_rx uart_rx
+delete
+
+# ── sync_fifo ─────────────────────────────────────────────────────────────────
+read_verilog -sv ../rtl/sync_fifo.v
+hierarchy -check -top sync_fifo
+proc; opt; memory -nomap; techmap; opt
+show -format dot -prefix ../docs/images/gate_sync_fifo sync_fifo
+delete
+
+# ── soc_bus ───────────────────────────────────────────────────────────────────
+read_verilog -sv ../rtl/soc_bus.v
+hierarchy -check -top soc_bus
+proc; opt; techmap; opt
+show -format dot -prefix ../docs/images/gate_soc_bus soc_bus
+delete
+
+# ── soc_sram ──────────────────────────────────────────────────────────────────
+read_verilog -sv ../rtl/soc_sram.v
+hierarchy -check -top soc_sram
+proc; opt; memory -nomap; techmap; opt
+show -format dot -prefix ../docs/images/gate_soc_sram soc_sram
+delete

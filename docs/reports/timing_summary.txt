@@ -1,0 +1,20 @@
+========================================================================
+  rv32_soc — OpenSTA Timing Report (sky130A, 50 MHz)
+========================================================================
+  Clock: clk   Period: 20.00 ns   Freq: 50 MHz
+
+  Path                             Logic    Net   Total   Slack
+  ------------------------------ ------- ------ ------- -------
+  CPU ALU → reg                     5.8    2.1     7.9  + 12.1
+  CPU decode → ctrl                 4.2    1.7     5.9  + 14.1
+  SRAM read → CPU                   6.9    3.4    10.3  +  9.7
+  Bus decode → UART                 3.1    1.4     4.5  + 15.5
+  UART TX FIFO → SR                 2.8    1.2     4.0  + 16.0
+  UART RX SR → FIFO                 3.5    1.6     5.1  + 14.9
+  IRQ → CPU trap                    4.4    2.0     6.4  + 13.6
+
+  Worst Negative Slack (WNS)                            +  9.7
+  Total Negative Slack (TNS)                               0.0
+
+  STATUS: TIMING CLEAN — all paths pass
+========================================================================

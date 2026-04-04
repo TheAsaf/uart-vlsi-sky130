@@ -2,6 +2,9 @@
 
 This directory contains all Verilog source files for the rv32_soc. There are **8 modules**; 4 are new SoC-level modules and 4 are the original UART IP.
 
+**Synthesis summary (Yosys 0.63):** 28,313 generic cells · 10,076 flip-flops · 0 errors  
+→ See [`docs/physical_structure.md`](../docs/physical_structure.md) for gate-level views, hierarchy diagram, and FIFO internals.
+
 The files are listed in dependency order (each file only instantiates modules defined in files above it):
 
 ```

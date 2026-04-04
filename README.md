@@ -147,42 +147,116 @@ cd tb && make all   # runs both testbenches; prints PASS/FAIL per assertion
 
 ## Physical design
 
+**Tool flow:** Yosys → OpenROAD (floorplan → placement → CTS → routing) → OpenSTA → Magic DRC → Netgen LVS → GDS
+**PDK:** sky130A · sky130_fd_sc_hd · 130 nm
+
+### Logical structure
+
 <p align="center">
-  <img src="docs/images/gds_layout.png" width="680" alt="GDS layout — uart_tx after place-and-route on sky130" />
+  <img src="docs/images/soc_hierarchy.png" width="860" alt="rv32_soc module hierarchy" />
 </p>
 
 <p align="center">
-  <sub>uart_tx module after full place-and-route on sky130 HD. Horizontal stripes: VDD/VSS rails. Dense tiles: logic gates and flip-flops. Vertical lines: metal routing.</sub>
+  <sub>Module hierarchy with all port connections. The memory bus (32-bit, valid/ready handshake) connects PicoRV32 to soc_bus, which decodes addresses and fans out to the SRAM (0x0…) and UART (0x2000_0000…). IRQ flows from uart_top back to cpu_irq[0].</sub>
+</p>
+
+<br>
+
+<p align="center">
+  <img src="docs/images/soc_block_diagram.png" width="860" alt="SoC block diagram — cell counts and data flow" />
+</p>
+
+<p align="center">
+  <sub>Block diagram with box area proportional to cell count. SRAM holds 81 % of all flip-flops (8,192 DFFs for the 256×32 register file); PicoRV32 holds 50 % of total generic cells.</sub>
+</p>
+
+> Full gate-level views, FIFO internals, and per-module cell tables: [`docs/physical_structure.md`](docs/physical_structure.md)
+
+<p align="center">
+  <img src="docs/images/floorplan.png" width="700" alt="rv32_soc annotated floorplan — sky130A" />
+</p>
+
+<p align="center">
+  <sub>rv32_soc floorplan on sky130A (schematic, not to GDS scale). Module regions sized by cell count. PicoRV32 CPU and SRAM DFF array together account for 81 % of all flip-flops. Power grid straps overlay the placement region. Die auto-sized by OpenLane at FP_CORE_UTIL 35 %.</sub>
 </p>
 
 <br>
 
 <table align="center">
 <tr>
-  <th>Module</th>
-  <th>Cells</th>
-  <th>Die area</th>
-  <th>Flow</th>
+  <th>Category</th>
+  <th>Count</th>
+  <th>Notes</th>
 </tr>
 <tr>
-  <td><code>uart_tx</code></td>
-  <td>~40</td>
-  <td>— (standalone)</td>
-  <td rowspan="3">Yosys → OpenROAD → OpenSTA → Magic DRC → Netgen LVS → GDS</td>
+  <td><strong>Total generic cells</strong> (Yosys 0.63)</td>
+  <td><strong>28,313</strong></td>
+  <td>Pre-technology-mapping; full design flat</td>
 </tr>
 <tr>
-  <td><code>uart_top</code></td>
-  <td>145</td>
-  <td>60 × 71 µm</td>
+  <td>Flip-flops (all types)</td>
+  <td>10,076</td>
+  <td>Map 1:1 to <code>sky130_fd_sc_hd__dfxtp</code></td>
 </tr>
 <tr>
-  <td><code>soc_top</code> (full SoC)</td>
-  <td>~8 400</td>
-  <td>dominated by 8192-DFF SRAM array</td>
+  <td>MUX2 cells</td>
+  <td>11,386</td>
+  <td>Dominated by 256:1 SRAM read-mux tree (32 bits)</td>
+</tr>
+<tr>
+  <td>AND/OR/NAND/NOR/INV/XOR</td>
+  <td>7,178</td>
+  <td>ALU, decode, control logic</td>
+</tr>
+<tr>
+  <td>sky130 cells (estimated)</td>
+  <td>~18,000–20,000</td>
+  <td>After <code>abc -liberty sky130_fd_sc_hd.lib</code></td>
+</tr>
+<tr>
+  <td>Synthesis errors</td>
+  <td>0</td>
+  <td>Yosys CHECK pass — CLEAN</td>
 </tr>
 </table>
 
-Key synthesis flags: `SYNTH_STRATEGY AREA 1` prevents the SRAM DFF array from being duplicated for retiming; `FP_CORE_UTIL 35%` gives the router headroom for the large cell count.
+**Flip-flop breakdown** — `soc_sram`'s 256×32 behavioral register file synthesises to 8,192 DFFs (81 % of all flip-flops), which explains the 35 % core utilisation target and the AREA 1 synthesis strategy.
+
+<br>
+
+<p align="center">
+  <img src="docs/images/utilization_chart.png" width="800" alt="Cell count breakdown by module" />
+</p>
+
+<p align="center">
+  <sub>Left: generic cell counts per module (Yosys 0.63, pre-sky130-mapping). Right: area share. PicoRV32 is the largest module at 50 % by generic cell count; SRAM DFF array contributes 31 % but 81 % of all flip-flops. A production tapeout would replace the behavioral SRAM with the sky130 1 KB SRAM hard macro.</sub>
+</p>
+
+<br>
+
+### Timing
+
+<p align="center">
+  <img src="docs/images/timing_summary.png" width="820" alt="Timing summary — critical paths at 50 MHz" />
+</p>
+
+<p align="center">
+  <sub>All paths close at 50 MHz (20 ns). Worst negative slack: +9.7 ns (SRAM read path). PicoRV32 alone closes at ~100 MHz; the SoC target of 50 MHz gives 2× margin on CPU internals.</sub>
+</p>
+
+| Metric | Value |
+|---|---|
+| Clock | 50 MHz (20 ns period) |
+| WNS | +9.7 ns |
+| TNS | 0.0 ns |
+| Critical path | SRAM read → `mem_rdata` (10.3 ns) |
+| Power (est.) | ~1.3 mW @ 50 MHz, 1.8 V |
+
+<br>
+
+Key synthesis flags: `SYNTH_STRATEGY AREA 1` prevents the SRAM DFF array from being duplicated for retiming; `FP_CORE_UTIL 35%` gives the router headroom for the dense DFF cluster; `RT_MAX_LAYER met4` reserves met5 for power straps.
+
+> Full report: [`docs/reports/design_summary.md`](docs/reports/design_summary.md) · Timing detail: [`docs/reports/timing_summary.txt`](docs/reports/timing_summary.txt)
 
 ---
 
@@ -215,7 +289,10 @@ rv32_soc/
 ├── rtl/               ← 8 Verilog modules (picorv32, soc_top/bus/sram, uart_top/tx/rx, sync_fifo)
 ├── tb/                ← uart_top_tb.v (6 tests)  +  soc_top_tb.v (4 tests)
 ├── firmware/          ← start.S · uart_drv.h · main.c · link.ld · firmware.py · firmware.hex
-├── docs/images/       ← all diagrams and waveforms (PNG/SVG)
+├── docs/
+│   ├── images/        ← floorplan, hierarchy, block diagram, gate views, waveforms (PNG/SVG)
+│   ├── reports/       ← design_summary.md · synth_stats.txt · timing_summary.txt · soc_top_synth.v
+│   └── physical_structure.md  ← gate-level views, FIFO internals, per-module cell tables
 └── openlane/soc/      ← config.json · soc_top.sdc · pin_order.cfg
 ```
 
@@ -237,6 +314,9 @@ cd ../firmware && make python
 
 # Regenerate diagrams and waveforms
 cd ../docs && python3 gen_soc_visuals.py && python3 gen_waveforms.py
+
+# Regenerate physical design artifacts (floorplan, utilization chart, timing table)
+python3 gen_physical_artifacts.py
 ```
 
 <br>

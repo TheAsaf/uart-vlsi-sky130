@@ -1,0 +1,28 @@
+# Yosys synthesis script for rv32_soc
+# Target: sky130_fd_sc_hd (generic cell estimates via synth command)
+# Usage: yosys run_synth.ys
+
+# Read all RTL sources
+read_verilog -sv ../rtl/sync_fifo.v
+read_verilog -sv ../rtl/uart_tx.v
+read_verilog -sv ../rtl/uart_rx.v
+read_verilog -sv ../rtl/uart_top.v
+read_verilog -sv ../rtl/soc_sram.v
+read_verilog -sv ../rtl/soc_bus.v
+read_verilog -sv ../rtl/picorv32.v
+read_verilog -sv ../rtl/soc_top.v
+
+# Set top module
+hierarchy -check -top soc_top
+
+# Synthesise to generic cells (no PDK mapping — pure statistics)
+synth -top soc_top -flatten
+
+# Print cell statistics
+stat -top soc_top
+
+# Write the gate-level netlist
+write_verilog -noattr ../docs/reports/soc_top_synth.v
+
+# Write JSON for external parsing
+stat -json -top soc_top > ../docs/reports/synth_stats.json
